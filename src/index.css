@@ -1,0 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Fredoka:wght@300..700&family=Quicksand:wght@300..700&family=Fira+Code:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Quicksand", "Fredoka", ui-sans-serif, system-ui, sans-serif;
+  --font-kids: "Patrick Hand", cursive, sans-serif;
+  --font-rounded: "Fredoka", sans-serif;
+  --font-mono: "Fira Code", monospace;
+  
+  /* Cozy Night Countryside & Starry Sky Theme Colors (vibrant, playful, childish colors under a warm twilight sky) */
+  --color-pastoral-night: #091136; /* Soft friendly night sky blue */
+  --color-pastoral-meadow: #0e1e38; /* Soft deep cozy pasture under twilight */
+  --color-pastoral-meadow-light: #162f55; /* Moonlit soft child-friendly blue-green */
+  --color-pastoral-grass: #22c55e; /* Bright lush pasture green */
+  --color-pastoral-grass-bright: #4ade80; /* Super cheerful bright green */
+  --color-pastoral-barn: #e11d48; /* Playful friendly barn rose-red */
+  --color-pastoral-barn-glow: #f43f5e; /* Cheerful glowing cherry red */
+  --color-pastoral-gold: #f59e0b; /* Harvest hay / magical crescent moon amber gold */
+  --color-pastoral-gold-bright: #facc15; /* Bright glowing childhood yellow */
+  
+  --color-twilight-950: #091133; /* Soft rich deep starry sky indigo-blue (not pitch dark) */
+  --color-twilight-900: #121d54; /* Beautiful bedtime warm dark blue */
+  --color-twilight-800: #1d2c77; /* Playful nocturnal indigo */
+  --color-twilight-700: #2a3c9e; /* Bright starlight blue-violet */
+  --color-twilight-600: #3b50c4; /* Rich sky violet */
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    background-color: var(--color-twilight-950);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-twilight-950);
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #05060C;
+}
+::-webkit-scrollbar-thumb {
+  background: #1B2152;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2D3678;
+}
+
+/* Custom twinkling animations */
+@keyframes celestial-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+    filter: drop-shadow(0 0 15px rgba(245, 158, 11, 0.4));
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+    filter: drop-shadow(0 0 25px rgba(245, 158, 11, 0.7));
+  }
+}
+
+@keyframes slow-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wave-flow {
+  0% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0.3);
+  }
+}
+
+.celestial-glow {
+  animation: celestial-pulse 4s ease-in-out infinite;
+}
+
+.star-spin {
+  animation: slow-spin 20s linear infinite;
+}
+
+.wave-bar {
+  animation: wave-flow 1.2s ease-in-out infinite;
+}
+
+@keyframes cartoon-star-float {
+  0% {
+    transform: translateY(0) rotate(var(--star-tilt, 0deg)) scale(0.92);
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));
+  }
+  50% {
+    transform: translateY(-12px) rotate(calc(var(--star-tilt, 0deg) + 6deg)) scale(1.08);
+    filter: drop-shadow(0 12px 20px rgba(251,146,60,0.6));
+  }
+  100% {
+    transform: translateY(0) rotate(var(--star-tilt, 0deg)) scale(0.92);
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));
+  }
+}
+
+.animate-cartoon-star {
+  animation: cartoon-star-float var(--star-duration, 6s) ease-in-out infinite;
+  animation-delay: var(--star-delay, 0s);
+}
+
