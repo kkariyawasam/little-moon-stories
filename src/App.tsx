@@ -30,6 +30,7 @@ import {
   Share2,
   Globe
 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 import { DatePicker } from './components/DatePicker';
 import cozyBedtimeFarmImage from './assets/images/cozy_bedtime_farm_1781463254008.jpg';
 
@@ -1447,6 +1448,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <Analytics />
 
     </div>
   );
