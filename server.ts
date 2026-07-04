@@ -202,15 +202,22 @@ const mockSubscribers: Subscriber[] = [
   }
 ];
 
-// JSON parsing for standard routes
-app.use(express.json());
+app.disable('x-powered-by');
+
+app.use((req: Request, res: Response, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// JSON parsing for standard routes. Keep this small because signup payloads are tiny.
+app.use(express.json({ limit: '25kb' }));
 
 // API endpoints
 app.get('/api/config', (req: Request, res: Response) => {
   res.json({
-    paypalClientId: process.env.PAYPAL_CLIENT_ID || '',
-    isMockDB: !supabase,
-    isMockPayPal: !process.env.PAYPAL_CLIENT_ID,
+    checkoutEnabled,
   });
 });
 
