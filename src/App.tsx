@@ -971,33 +971,33 @@ export default function App() {
 
       {/* Coming Soon modal shown while checkout is not ready */}
       {showSignupModal && (
-        <div id="coming-soon-modal" className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+        <div id="coming-soon-modal" className="fixed inset-0 z-55 flex items-center justify-center px-3 py-5 sm:p-4 bg-slate-950/85 backdrop-blur-md">
           <div className="absolute inset-0 cursor-pointer" onClick={() => setShowSignupModal(false)} />
 
-          <div className="relative w-full max-w-md bg-gradient-to-b from-[#0e1131] to-[#040615] border border-[#262c64] rounded-3xl p-7 sm:p-8 shadow-2xl overflow-hidden text-center">
+          <div className="relative w-full max-w-[22rem] sm:max-w-md bg-gradient-to-b from-[#0e1131] to-[#040615] border border-[#262c64] rounded-2xl sm:rounded-3xl px-5 py-6 sm:p-8 shadow-2xl overflow-hidden text-center">
             <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/10 rounded-full filter blur-2xl pointer-events-none" />
 
             <button
               onClick={() => setShowSignupModal(false)}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 w-8 h-8 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <div className="relative z-10 space-y-4 pt-4">
-              <div className="w-14 h-14 rounded-2xl bg-amber-300/10 border border-amber-300/30 text-amber-200 flex items-center justify-center mx-auto">
-                <Sparkles className="w-6 h-6" />
+            <div className="relative z-10 space-y-3 sm:space-y-4 pt-3 sm:pt-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-300/10 border border-amber-300/30 text-amber-200 flex items-center justify-center mx-auto">
+                <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-kids tracking-wide text-white">Coming Soon</h3>
-                <p className="text-sm text-slate-300 leading-relaxed">
+                <h3 className="text-xl sm:text-2xl font-kids tracking-wide text-white">Coming Soon</h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
                   We're thoughtfully building this feature to make bedtime simpler and more magical. Check back soon for updates.
                 </p>
               </div>
               <button
                 onClick={() => setShowSignupModal(false)}
-                className="w-full py-3 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+                className="w-full py-2.5 sm:py-3 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
               >
                 Close
               </button>
