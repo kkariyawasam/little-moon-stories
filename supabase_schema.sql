@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS public.subscribers (
   payment_status INTEGER NOT NULL DEFAULT 0, -- 0 for unpaid, 1 for paid
   package_end_date TIMESTAMP WITH TIME ZONE, -- End date of monthly package
   payment_provider_order_id TEXT,
-  expires_at TIMESTAMP WITH TIME ZONE NOT NULL, -- Expiration date, 30 days from signup/payment confirmation
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -74,7 +73,7 @@ VALUES (
   'story-audio',
   false,
   52428800,
-  ARRAY['audio/mpeg', 'audio/mp3']
+  ARRAY['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav']
 )
 ON CONFLICT (id) DO UPDATE SET
   public = excluded.public,
@@ -122,6 +121,9 @@ END $$;
 ALTER TABLE public.subscribers
   ADD COLUMN IF NOT EXISTS payment_provider_order_id TEXT;
 
+ALTER TABLE public.subscribers
+  DROP COLUMN IF EXISTS expires_at;
+
 CREATE INDEX IF NOT EXISTS idx_subscribers_paid_package
   ON public.subscribers(payment_status, package_end_date);
 
@@ -155,15 +157,9 @@ BEGIN
   )
   SELECT
     s.id,
-    ((now() AT TIME ZONE s.timezone)::date + interval '1 day')::date,
-    (
-      (((now() AT TIME ZONE s.timezone)::date + interval '1 day')::date + s.delivery_time)
-      AT TIME ZONE s.timezone
-    ) - interval '1 day',
-    (
-      (((now() AT TIME ZONE s.timezone)::date + interval '1 day')::date + s.delivery_time)
-      AT TIME ZONE s.timezone
-    ),
+    job.story_date,
+    job.scheduled_delivery_at - interval '1 day',
+    job.scheduled_delivery_at,
     jsonb_build_object(
       'parent_email', s.parent_email,
       'age_range', s.age_range,
@@ -179,15 +175,24 @@ BEGIN
             'gender', c.gender,
             'birthday', c.birthday
           )
+          ORDER BY c.id
         ) filter (where c.id is not null),
         '[]'::jsonb
       )
     )
   FROM public.subscribers s
+  CROSS JOIN LATERAL (
+    SELECT
+      ((now() AT TIME ZONE s.timezone)::date + interval '1 day')::date AS story_date,
+      (
+        (((now() AT TIME ZONE s.timezone)::date + interval '1 day')::date + s.delivery_time)
+        AT TIME ZONE s.timezone
+      ) AS scheduled_delivery_at
+  ) job
   LEFT JOIN public.children c ON c.subscriber_id = s.id
   WHERE s.payment_status = 1
-    AND s.package_end_date >= now()
-  GROUP BY s.id
+    AND s.package_end_date >= job.scheduled_delivery_at
+  GROUP BY s.id, job.story_date, job.scheduled_delivery_at
   ON CONFLICT (subscriber_id, story_date) DO NOTHING;
 
   GET DIAGNOSTICS inserted_count = ROW_COUNT;
@@ -195,7 +200,138 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.enqueue_signup_story_job(
+  p_subscriber_id BIGINT,
+  p_minimum_lead_time INTERVAL DEFAULT interval '10 minutes'
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  inserted_story_job_id UUID;
+BEGIN
+  INSERT INTO public.story_jobs (
+    subscriber_id,
+    story_date,
+    scheduled_generation_at,
+    scheduled_delivery_at,
+    prompt_payload
+  )
+  SELECT
+    s.id,
+    job.story_date,
+    now(),
+    job.scheduled_delivery_at,
+    jsonb_build_object(
+      'parent_email', s.parent_email,
+      'age_range', s.age_range,
+      'preferred_theme', s.preferred_theme,
+      'favorite_hobby', s.favorite_hobby,
+      'favorite_animal', s.favorite_animal,
+      'timezone', s.timezone,
+      'delivery_time', s.delivery_time,
+      'children', coalesce(
+        jsonb_agg(
+          jsonb_build_object(
+            'nickname', c.nickname,
+            'gender', c.gender,
+            'birthday', c.birthday
+          )
+          ORDER BY c.id
+        ) filter (where c.id is not null),
+        '[]'::jsonb
+      )
+    )
+  FROM public.subscribers s
+  CROSS JOIN LATERAL (
+    SELECT
+      (now() AT TIME ZONE s.timezone)::date AS story_date,
+      (
+        ((now() AT TIME ZONE s.timezone)::date + s.delivery_time)
+        AT TIME ZONE s.timezone
+      ) AS scheduled_delivery_at
+  ) job
+  LEFT JOIN public.children c ON c.subscriber_id = s.id
+  WHERE s.id = p_subscriber_id
+    AND s.payment_status = 1
+    AND job.scheduled_delivery_at >= now() + p_minimum_lead_time
+    AND s.package_end_date >= job.scheduled_delivery_at
+  GROUP BY s.id, job.story_date, job.scheduled_delivery_at
+  ON CONFLICT (subscriber_id, story_date) DO NOTHING
+  RETURNING id INTO inserted_story_job_id;
+
+  RETURN inserted_story_job_id;
+END;
+$$;
+
 DROP FUNCTION IF EXISTS public.get_ready_story_deliveries(INTEGER);
+
+CREATE OR REPLACE FUNCTION public.claim_ready_story_generations(batch_size INTEGER DEFAULT 5)
+RETURNS TABLE (
+  id UUID,
+  subscriber_id BIGINT,
+  story_date DATE,
+  scheduled_generation_at TIMESTAMP WITH TIME ZONE,
+  scheduled_delivery_at TIMESTAMP WITH TIME ZONE,
+  prompt_payload JSONB
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH picked AS (
+    SELECT j.id
+    FROM public.story_jobs j
+    JOIN public.subscribers s ON s.id = j.subscriber_id
+    WHERE j.status = 'pending_generation'
+      AND j.scheduled_generation_at <= now()
+      AND s.payment_status = 1
+      AND s.package_end_date >= j.scheduled_delivery_at
+    ORDER BY j.scheduled_generation_at ASC
+    LIMIT batch_size
+    FOR UPDATE OF j SKIP LOCKED
+  ),
+  updated AS (
+    UPDATE public.story_jobs j
+    SET
+      status = 'generating',
+      updated_at = now(),
+      error_message = NULL
+    FROM picked p
+    WHERE j.id = p.id
+    RETURNING j.*
+  )
+  SELECT
+    u.id,
+    u.subscriber_id,
+    u.story_date,
+    u.scheduled_generation_at,
+    u.scheduled_delivery_at,
+    u.prompt_payload
+  FROM updated u;
+$$;
+
+CREATE OR REPLACE FUNCTION public.mark_story_generation_failed(
+  p_story_job_id UUID,
+  p_error_message TEXT,
+  p_retry BOOLEAN DEFAULT true
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.story_jobs
+  SET
+    status = CASE WHEN p_retry THEN 'pending_generation' ELSE 'generation_failed' END,
+    updated_at = now(),
+    error_message = p_error_message
+  WHERE id = p_story_job_id;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION public.claim_ready_story_deliveries(batch_size INTEGER DEFAULT 100)
 RETURNS TABLE (
@@ -349,11 +485,17 @@ DROP POLICY IF EXISTS "Allow updates for webhook confirmation on subscribers" ON
 -- emails, child details, payment status, and private storage paths.
 
 REVOKE EXECUTE ON FUNCTION public.enqueue_tomorrow_story_jobs() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.enqueue_signup_story_job(BIGINT, INTERVAL) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.claim_ready_story_generations(INTEGER) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.mark_story_generation_failed(UUID, TEXT, BOOLEAN) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.claim_ready_story_deliveries(INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.mark_story_delivery_sent(UUID, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.mark_story_delivery_failed(UUID, TEXT) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.enqueue_tomorrow_story_jobs() TO service_role;
+GRANT EXECUTE ON FUNCTION public.enqueue_signup_story_job(BIGINT, INTERVAL) TO service_role;
+GRANT EXECUTE ON FUNCTION public.claim_ready_story_generations(INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_story_generation_failed(UUID, TEXT, BOOLEAN) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_ready_story_deliveries(INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_story_delivery_sent(UUID, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_story_delivery_failed(UUID, TEXT) TO service_role;

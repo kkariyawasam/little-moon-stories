@@ -13,6 +13,8 @@ const localDirname = typeof (globalThis as any).__dirname !== 'undefined' ? (glo
 const app = express();
 const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 const isVercel = process.env.VERCEL === '1';
+const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
+const mockCheckoutEnabled = !isProd && process.env.ALLOW_MOCK_CHECKOUT === 'true';
 const port = 3000;
 
 // Initialize clients conditionally to prevent startup crashes if keys are missing
@@ -117,6 +119,28 @@ const normalizeChildren = (children: unknown): ChildDetail[] => {
   });
 };
 
+const enqueueSignupStoryJob = async (subscriberId: unknown) => {
+  if (!supabase) return;
+
+  const numericSubscriberId = Number(subscriberId);
+  if (!Number.isInteger(numericSubscriberId)) return;
+
+  const { data, error } = await supabase.rpc('enqueue_signup_story_job', {
+    p_subscriber_id: numericSubscriberId
+  });
+
+  if (error) {
+    console.error('Unable to enqueue same-day signup story job:', error);
+    return;
+  }
+
+  if (data) {
+    console.log(`Same-day signup story job created: ${data}`);
+  } else {
+    console.log(`No same-day signup story job needed for subscriber ${numericSubscriberId}.`);
+  }
+};
+
 // Memory database fallback for easy previewing when keys are not set
 interface ChildDetail {
   name: string;
@@ -139,7 +163,6 @@ interface Subscriber {
   payment_status: number; // 0 for unpaid, 1 for paid
   package_end_date: string | null;
   payment_provider_order_id?: string;
-  expires_at: string;
   created_at: string;
   children_list?: ChildDetail[];
 }
@@ -159,7 +182,6 @@ const mockSubscribers: Subscriber[] = [
     payment_status: 1,
     package_end_date: new Date(Date.now() + 3600000 * 24 * 29).toISOString(),
     payment_provider_order_id: 'cs_mock_paid123',
-    expires_at: new Date(Date.now() + 3600000 * 24 * 29).toISOString(), // 30 days total from created_at
     created_at: new Date(Date.now() - 3600000 * 24).toISOString()
   },
   {
@@ -176,7 +198,6 @@ const mockSubscribers: Subscriber[] = [
     payment_status: 1,
     package_end_date: new Date(Date.now() + 3600000 * 24 * 28).toISOString(),
     payment_provider_order_id: 'cs_mock_paid456',
-    expires_at: new Date(Date.now() + 3600000 * 24 * 28).toISOString(),
     created_at: new Date(Date.now() - 3600000 * 48).toISOString()
   }
 ];
@@ -219,6 +240,11 @@ app.get('/api/subscribers', async (req: Request, res: Response) => {
 
 // Subscriber action endpoint (Signup + Payment handler)
 app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> => {
+  if (!checkoutEnabled) {
+    res.status(503).json({ error: 'Coming Soon. Checkout is not available yet.' });
+    return;
+  }
+
   const {
     parent_email,
     child_names,
@@ -265,7 +291,6 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     plan_type: 'monthly',
     payment_status: 0,
     package_end_date: expiresAt,
-    expires_at: expiresAt,
     created_at: new Date().toISOString()
   };
 
@@ -288,7 +313,6 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
           plan_type: newSub.plan_type,
           payment_status: newSub.payment_status,
           package_end_date: newSub.package_end_date,
-          expires_at: newSub.expires_at,
           created_at: newSub.created_at
         }])
         .select('id');
@@ -356,15 +380,15 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
               purchase_units: [
                 {
                   reference_id: finalSubscriberId,
-                  description: 'Little Moon Stories - Premium Personalized Subscription (1 Month)',
+                  description: 'Cozy Kid Tales - Premium Personalized Subscription (1 Month)',
                   amount: {
                     currency_code: 'USD',
-                    value: '4.99'
+                    value: '9.00'
                   }
                 }
               ],
               application_context: {
-                brand_name: 'Little Moon Stories',
+                brand_name: 'Cozy Kid Tales',
                 landing_page: 'BILLING',
                 user_action: 'PAY_NOW',
                 return_url: `${redirectBase}/api/paypal-checkout-success?sub_id=${finalSubscriberId}`,
@@ -404,6 +428,10 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
           });
         } catch (payPayPalErr: any) {
           console.error('PayPal api failed or got rate-limited. Falling back to simulation.', payPayPalErr);
+          if (!mockCheckoutEnabled) {
+            res.status(502).json({ error: 'Unable to start checkout. Please try again later.' });
+            return;
+          }
           const mockRedirectUrl = `/api/mock-checkout-success?session_id=pay_mock_${finalSubscriberId}&sub_id=${finalSubscriberId}`;
           res.json({
             checkoutSessionUrl: mockRedirectUrl,
@@ -413,6 +441,10 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
           });
         }
       } else {
+        if (!mockCheckoutEnabled) {
+          res.status(503).json({ error: 'Checkout is not configured yet.' });
+          return;
+        }
         // Fallback: Create simulated mock PayPal checkout URL for local developer sandbox
         const mockRedirectUrl = `/api/mock-checkout-success?session_id=pay_mock_${finalSubscriberId}&sub_id=${finalSubscriberId}`;
         res.json({
@@ -435,6 +467,11 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
 
 // Callback route to capture PayPal checkout order and finalize subscription
 app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Promise<void> => {
+  if (!checkoutEnabled) {
+    res.redirect(`/?checkout_cancelled=true`);
+    return;
+  }
+
   const { token, sub_id } = req.query; // token is PayPal's checkout order ID when returning
   const port = 3000;
   const redirectBase = process.env.APP_URL || `http://localhost:${port}`;
@@ -487,19 +524,18 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
         .update({ 
           payment_status: 1, 
           payment_provider_order_id: token as string,
-          expires_at: paidExpiryDate,
           package_end_date: paidExpiryDate,
           plan_type: 'monthly'
         })
         .eq('id', sub_id);
       if (error) console.error('Supabase update error:', error);
+      if (!error) await enqueueSignupStoryJob(sub_id);
     }
 
     const sub = mockSubscribers.find(s => s.id === sub_id);
     if (sub) {
       sub.payment_status = 1;
       sub.payment_provider_order_id = token as string;
-      sub.expires_at = paidExpiryDate;
       sub.package_end_date = paidExpiryDate;
       sub.plan_type = 'monthly';
     }
@@ -513,6 +549,11 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
 
 // Helper route to simulate successful checkout redirection & mock webhook effect
 app.get('/api/mock-checkout-success', async (req: Request, res: Response): Promise<void> => {
+  if (!mockCheckoutEnabled) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+
   const { session_id, sub_id } = req.query;
 
   const paidExpiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -525,19 +566,18 @@ app.get('/api/mock-checkout-success', async (req: Request, res: Response): Promi
         .update({ 
           payment_status: 1, 
           payment_provider_order_id: session_id as string,
-          expires_at: paidExpiryDate,
           package_end_date: paidExpiryDate,
           plan_type: 'monthly'
         })
         .eq('id', sub_id);
       if (error) console.error('Supabase mock update error:', error);
+      if (!error) await enqueueSignupStoryJob(sub_id);
     }
 
     const sub = mockSubscribers.find(s => s.id === sub_id);
     if (sub) {
       sub.payment_status = 1;
       sub.payment_provider_order_id = session_id as string;
-      sub.expires_at = paidExpiryDate;
       sub.package_end_date = paidExpiryDate;
       sub.plan_type = 'monthly';
     }
@@ -570,7 +610,7 @@ async function startServer() {
 
   // Start Server
   app.listen(port, '0.0.0.0', () => {
-    console.log(`Little Moon Stories fullstack server running at http://localhost:${port}`);
+    console.log(`Cozy Kid Tales fullstack server running at http://localhost:${port}`);
   });
 }
 

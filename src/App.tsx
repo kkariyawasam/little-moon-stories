@@ -75,45 +75,6 @@ const getTimezoneOptions = (detectedTz: string) => {
   return USA_TIMEZONES;
 };
 
-const getDeliveryTimingPhrase = (deliveryStr: string, tz: string): string => {
-  try {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false
-    });
-    const parts = formatter.formatToParts(now);
-    const getVal = (type: string) => {
-      const part = parts.find(p => p.type === type);
-      return part ? parseInt(part.value, 10) : null;
-    };
-
-    const tzHour = getVal('hour');
-    const tzMin = getVal('minute');
-
-    if (tzHour === null || tzMin === null) return 'tonight';
-
-    const [delHourStr, delMinStr] = deliveryStr.split(':');
-    const delHour = parseInt(delHourStr, 10);
-    const delMin = parseInt(delMinStr, 10);
-
-    if (isNaN(delHour) || isNaN(delMin)) return 'tonight';
-
-    // If current time in selected/target timezone is past/at the bedtime today
-    if (tzHour > delHour || (tzHour === delHour && tzMin >= delMin)) {
-      return 'tomorrow night';
-    }
-    return 'tonight';
-  } catch (e) {
-    return 'tonight';
-  }
-};
-
 const STARS_DATA = Array.from({ length: 320 }).map((_, i) => {
   const x = (((i * 29) + 7) % 1000) / 10; // 0% to 100%
   const y = (((i * 43) + 13) % 980) / 10; // 0% to 98%
@@ -261,15 +222,15 @@ export default function App() {
     },
     {
       q: "Can I change my child's storytelling preferences later?",
-      a: "Absolutely! You will have an online preferences panel connected to your email where you can update their favorite animal, new hobby, or change the daily delivery time (e.g. from 19:30 to 20:00)."
+      a: "No. Story preferences stay fixed for the current monthly plan, but the stories are still different each night, so they do not feel boring. When the month ends, you can register again with new preferences for the next month."
     },
     {
       q: "How do I cancel my subscription?",
-      a: "Subscriptions are billed on a flexible monthly basis at $4.99, which you can pause or cancel with a single click inside your email link at any time. There are no locking contracts or penalties."
+      a: "This is a one-month story plan for $9. After registration, the plan stays active until the month ends. If you do not want another month, simply do not register again for the next monthly plan."
     },
     {
       q: "What contexts and settings are the stories set in?",
-      a: "Our stories are richly contextualized around gorgeous soothing landscapes - from serene seaside beaches and magical misty mountains to quiet forest reserves - filled with beautiful calming elements like sweet animal friends, peaceful nature walks, and soft ocean lullabies."
+      a: "Each story is created around your child's selected theme, hobby, and favorite animal."
     }
   ];
 
@@ -540,9 +501,7 @@ export default function App() {
             <span className="flex items-center gap-2 text-sm">
               <CheckCircle className="w-5 h-5 shrink-0 text-slate-950 animate-bounce" />
               <span>
-                Subscription confirmed! Your bedtime audio queue is set up and first delivery starts {(() => {
-                  return getDeliveryTimingPhrase(deliveryTime, timezone);
-                })()}!
+                Payment successful! Your Cozy Kid Tales subscription is active. If your selected bedtime is at least 2 hours from now, we will prepare and send your first story tonight. Otherwise, your first story will arrive tomorrow at your chosen bedtime.
               </span>
             </span>
             <button 
@@ -586,7 +545,7 @@ export default function App() {
             </div>
             <div>
               <span className="text-2xl font-kids tracking-wide bg-gradient-to-r from-amber-200 via-yellow-300 to-rose-300 bg-clip-text text-transparent">
-                Little Moon Stories
+                Cozy Kid Tales
               </span>
               <span className="block text-[9px] uppercase tracking-widest text-[#7c83b3] font-mono font-medium">Screen-Free Bedtime Audio</span>
             </div>
@@ -633,7 +592,7 @@ export default function App() {
               }}
               className="px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 bg-amber-300 rounded-full hover:bg-amber-200 hover:shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all cursor-pointer font-bold"
             >
-              Subscribe
+              Create My Story Plan
             </button>
           </div>
         </div>
@@ -646,7 +605,7 @@ export default function App() {
           <div className="space-y-6 max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/70 border border-emerald-900/40 text-xs text-emerald-300 font-medium font-mono">
               <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" />
-              <span>100% Screen-Free Cozy Night Pasture Stories</span>
+              <span>100% Screen-Free Cozy Night Personalized Stories</span>
             </div>
             
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-kids tracking-wide text-white leading-[1.15]">
@@ -669,7 +628,7 @@ export default function App() {
                 className="px-8 py-4 rounded-xl text-slate-950 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 <Moon className="w-4 h-4" />
-                Subscribe
+                Create My Story Plan
               </button>
               
 
@@ -686,7 +645,7 @@ export default function App() {
                 <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">Ages Supported</span>
               </div>
               <div>
-                <span className="block text-2xl font-bold text-slate-100 font-mono">$4.99</span>
+                <span className="block text-2xl font-bold text-slate-100 font-mono">$9</span>
                 <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">Monthly Rate</span>
               </div>
             </div>
@@ -703,7 +662,7 @@ export default function App() {
               
               <img 
                 src="/src/assets/images/cozy_bedtime_farm_1781463254008.jpg" 
-                alt="Cozy Bedtime Farm and Smiling Little Moon under starry countryside sky" 
+                alt="Cozy bedtime farm under a peaceful starry countryside sky" 
                 className="block w-full aspect-[16/9] object-cover rounded-[20px]"
                 referrerPolicy="no-referrer"
               />
@@ -774,7 +733,7 @@ export default function App() {
               Sample Audio Story
             </span>
             <h2 className="text-3xl sm:text-4xl font-kids tracking-wide text-white leading-tight">
-              Hear the bedtime voice before you subscribe
+              Hear the bedtime voice before you create your story plan
             </h2>
             <p className="text-slate-300 text-sm leading-relaxed font-light">
               A gentle preview helps parents understand the pacing, warmth, and sleepy tone children receive at bedtime.
@@ -787,7 +746,7 @@ export default function App() {
                 <PlayCircle className="w-6 h-6" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-bold text-white">Little Moon Sample</h3>
+                <h3 className="text-sm font-bold text-white">Cozy Kid Tales Sample</h3>
                 <p className="text-[11px] text-slate-400 font-mono">Personalized bedtime audio preview</p>
               </div>
             </div>
@@ -819,45 +778,14 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
           
           <div className="lg:col-span-6 space-y-6 text-left">
-            <span className="text-xs uppercase font-bold tracking-widest text-[#828bbd] font-mono">Pediatric Sleep Science</span>
+            <span className="text-xs uppercase font-bold tracking-widest text-[#828bbd] font-mono">Screen-Free Bedtime</span>
             <h2 className="text-4xl sm:text-5xl font-kids tracking-wide text-white leading-tight">
-              Why pediatricians recommend <span className="text-amber-300">audio-only</span> over screens
+              A calmer way to enjoy stories before bed
             </h2>
             <p className="text-slate-400 leading-relaxed text-sm md:text-base font-light">
-              Artificial blue light emitted by tablets and mobile screens mimics daytime solar patterns, actively blocking your child's Melatonin release and delaying quality deep sleep. Little Moon Stories relies purely on sensory auditory triggers to encourage natural, calm dream cycles.
+              Cozy Kid Tales gives families a gentle, personalized audio story to enjoy as part of a calm bedtime routine without visual autoplay, ads, or endless scrolling.
             </p>
 
-            <div className="space-y-4.5 pt-2">
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-lg bg-amber-400/10 flex items-center justify-center text-amber-300 border border-amber-300/20 mt-0.5 shrink-0">
-                  <Check className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-[#f7e0bc]">Melatonin Preserving</h4>
-                  <p className="text-xs text-[#a1a8c9] mt-0.5 font-light">Pure acoustic stimuli with no optical flashing triggers. Safeguards critical pineal cycles.</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-lg bg-indigo-400/10 flex items-center justify-center text-indigo-300 border border-indigo-400/20 mt-0.5 shrink-0">
-                  <Check className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-[#d9e0fc]">Deep Artistic Vocabulary</h4>
-                  <p className="text-xs text-[#a1a8c9] mt-0.5 font-light">Instead of passive rapid-fire video scrolling, our stories prompt children to actively imagine and visualize, enhancing linguistic memory.</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-lg bg-purple-400/10 flex items-center justify-center text-purple-300 border border-purple-400/20 mt-0.5 shrink-0">
-                  <Check className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-[#f4dcfc]">Rich Soothing Settings</h4>
-                  <p className="text-xs text-[#a1a8c9] mt-0.5 font-light">Tales are beautifully rooted in relaxing nature landscapes, gentle whispers, forest journeys, and slow-paced sensory detail.</p>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -866,9 +794,9 @@ export default function App() {
               <div className="w-10 h-10 rounded-lg bg-amber-400/10 text-amber-300 flex items-center justify-center border border-amber-400/20">
                 <Shield className="w-5 h-5" />
               </div>
-              <h4 className="font-bold text-white text-sm">Perfect Parental Lock</h4>
+              <h4 className="font-bold text-white text-sm">Screen-Free Listening</h4>
               <p className="text-xs text-slate-400 leading-relaxed font-light">
-                Zero interactive video loops, zero ads, and zero toxic algorithmic chains. You control the delivery.
+                A story children can hear, imagine, and enjoy without needing to watch a screen.
               </p>
             </div>
 
@@ -876,9 +804,9 @@ export default function App() {
               <div className="w-10 h-10 rounded-lg bg-indigo-400/10 text-indigo-300 flex items-center justify-center border border-indigo-400/20">
                 <Mail className="w-5 h-5" />
               </div>
-              <h4 className="font-bold text-white text-sm">Instant Email Link</h4>
+              <h4 className="font-bold text-white text-sm">Parent-Friendly Delivery</h4>
               <p className="text-xs text-slate-400 leading-relaxed font-light">
-                Simple as tapping check-mail on any device or tablet. No frustrating app stores, updates, or accounts required.
+                A simple story link delivered to the parent's email. No child-facing app, scrolling feed, or in-story ads.
               </p>
             </div>
 
@@ -886,9 +814,9 @@ export default function App() {
               <div className="w-10 h-10 rounded-lg bg-pink-400/10 text-pink-300 flex items-center justify-center border border-pink-400/20">
                 <Compass className="w-5 h-5" />
               </div>
-              <h4 className="font-bold text-white text-sm">Universal Values</h4>
+              <h4 className="font-bold text-white text-sm">Gentle Bedtime Themes</h4>
               <p className="text-xs text-slate-400 leading-relaxed font-light">
-                Heartfelt bedtime lessons - sharing, patience, kindness - intertwined with warm, sleepy scenery.
+                Personalized stories filled with kindness, patience, curiosity, friendship, and caring moments.
               </p>
             </div>
 
@@ -896,9 +824,19 @@ export default function App() {
               <div className="w-10 h-10 rounded-lg bg-purple-400/10 text-purple-300 flex items-center justify-center border border-purple-400/20">
                 <Heart className="w-5 h-5" />
               </div>
-              <h4 className="font-bold text-white text-sm">Acoustic Cooldown</h4>
+              <h4 className="font-bold text-white text-sm">A Calm Nightly Ritual</h4>
               <p className="text-xs text-slate-400 leading-relaxed font-light">
-                Gently paced vocal tracks specifically engineered to lower cardiac heart rates and prompt yawning.
+                A familiar story routine that can become part of a peaceful wind-down before bed.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#090b1c] border border-[#22285a]/40 text-left space-y-3 shadow-md hover:border-[#384088] transition-colors sm:col-span-2">
+              <div className="w-10 h-10 rounded-lg bg-emerald-400/10 text-emerald-300 flex items-center justify-center border border-emerald-400/20">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <h4 className="font-bold text-white text-sm">Made for Imagination</h4>
+              <p className="text-xs text-slate-400 leading-relaxed font-light">
+                Children listen, picture the story in their minds, and enjoy a cozy moment with family.
               </p>
             </div>
 
@@ -913,10 +851,7 @@ export default function App() {
       <section id="pricing" className="py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-6 md:px-12 relative">
         <div className="text-center space-y-4 max-w-2xl mx-auto mb-16">
           <span className="text-xs uppercase font-bold tracking-widest text-[#828bbd] font-mono">Transparent Plans</span>
-          <h2 className="text-4xl sm:text-5xl font-kids tracking-wide text-white">Select Your Bedtime Journey</h2>
-          <p className="text-slate-400 text-sm font-light">
-            Keep it budget-friendly with personalized storylines for families across the United States. No binding contracts, cancel in one-click from your email box.
-          </p>
+          <h2 className="text-4xl sm:text-5xl font-kids tracking-wide text-white">Start Your Bedtime Journey</h2>
         </div>
 
         <div className="max-w-md mx-auto">
@@ -931,7 +866,7 @@ export default function App() {
               <h3 className="text-2xl font-bold text-white">Monthly Plan</h3>
               
               <div className="flex items-baseline gap-1 font-mono">
-                <span className="text-4xl font-black text-amber-300">$4.99</span>
+                <span className="text-4xl font-black text-amber-300">$9</span>
                 <span className="text-xs text-indigo-200">/ month</span>
               </div>
 
@@ -950,15 +885,11 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <Check className="w-4 h-4 shrink-0 text-amber-300" />
-                  <span>US-friendly settings and cozy nature scenes included</span>
+                  <span>Cozy nature scenes included</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <Check className="w-4 h-4 shrink-0 text-amber-300" />
                   <span>100% advertising-free, pure media</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 shrink-0 text-amber-300" />
-                  <span>Single-click cancel inside email</span>
                 </li>
               </ul>
             </div>
@@ -969,52 +900,8 @@ export default function App() {
               }}
               className="w-full py-3 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer text-center shadow-lg shadow-amber-500/10"
             >
-              Subscribe
+              Create My Story Plan
             </button>
-          </div>
-
-        </div>
-      </section>
-
-      {/* 7. PREVIEW STORY EXPLANATION COMPONENT */}
-      <section className="py-16 bg-transparent border-t border-indigo-950/40 mx-auto max-w-4xl px-6 md:px-12 text-center relative">
-        <div className="bg-gradient-to-br from-[#121c4b] via-[#091136] to-[#16215b] rounded-[2.5rem] border-2 border-amber-300 p-8 sm:p-14 relative overflow-hidden text-left sm:text-center shadow-xl">
-          
-          <div className="absolute top-[10%] right-[10%] opacity-5 text-indigo-400 pointer-events-none">
-            <Sparkle className="w-32 h-32" />
-          </div>
-
-          <div className="max-w-2xl mx-auto space-y-6 relative z-10">
-            <h3 className="text-3xl sm:text-4xl font-kids tracking-wide text-white">How Your Membership Works</h3>
-            <p className="text-slate-300 text-sm leading-relaxed font-light">
-              We queue a fresh sleepy path each evening, matching your child's age category, favorites, and bedtime target.
-            </p>
-
-            <div className="pt-6 grid grid-cols-1 sm:grid-cols-3 gap-6 text-left text-xs text-slate-300 font-light">
-              <div className="p-5 rounded-2xl bg-[#0c1444] border border-[#1f2c6e]/80 shadow-md">
-                <span className="block font-bold text-amber-300 mb-1">Coastal Lull</span>
-                Meet your tiny animal friend by a quiet moonlit beach under a gentle breeze. Super soft pacing.
-              </div>
-              <div className="p-5 rounded-2xl bg-[#0c1444] border border-[#1f2c6e]/80 shadow-md">
-                <span className="block font-bold text-indigo-300 mb-1">Highland Cozy</span>
-                Explore a cozy mountain meadow, finding peaceful stars matching your kid's active hobby.
-              </div>
-              <div className="p-5 rounded-2xl bg-[#0c1444] border border-[#1f2c6e]/80 shadow-md">
-                <span className="block font-bold text-rose-300 mb-1">Lunar Forest</span>
-                A quiet, relaxing walk through a pine forest, gently guiding the body toward sleep.
-              </div>
-            </div>
-
-            <div className="pt-6">
-              <button 
-                onClick={() => {
-                  setShowSignupModal(true);
-                }}
-                className="px-8 py-3 rounded-full bg-indigo-650 hover:bg-indigo-600 font-bold hover:shadow-lg transition-all text-xs tracking-wider uppercase text-white cursor-pointer inline-flex items-center gap-2 border border-indigo-550"
-              >
-                Subscribe
-              </button>
-            </div>
           </div>
 
         </div>
@@ -1070,13 +957,10 @@ export default function App() {
                 L
               </div>
               <div>
-                <span className="block text-sm font-bold text-slate-300">Little Moon Stories LLC (c) 2026</span>
+                <span className="block text-sm font-bold text-slate-300">Cozy Kid Tales LLC (c) 2026</span>
                 <span className="block text-[10px] text-slate-500 font-mono">Global Bedtime Companion</span>
               </div>
             </div>
-            <p className="text-xs text-slate-500 max-w-md text-center sm:text-right font-light leading-relaxed">
-              Interactive premium children audio stories engine. Built with modern React and Google Gemini AI.
-            </p>
           </div>
 
         </div>
@@ -1084,8 +968,45 @@ export default function App() {
 
       </div> {/* Close children main content container */}
 
-      {/* 6. SIGNUP / REGISTRATION POPUP MODAL */}
+      {/* Coming Soon modal shown while checkout is not ready */}
       {showSignupModal && (
+        <div id="coming-soon-modal" className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+          <div className="absolute inset-0 cursor-pointer" onClick={() => setShowSignupModal(false)} />
+
+          <div className="relative w-full max-w-md bg-gradient-to-b from-[#0e1131] to-[#040615] border border-[#262c64] rounded-3xl p-7 sm:p-8 shadow-2xl overflow-hidden text-center">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/10 rounded-full filter blur-2xl pointer-events-none" />
+
+            <button
+              onClick={() => setShowSignupModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="relative z-10 space-y-4 pt-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-300/10 border border-amber-300/30 text-amber-200 flex items-center justify-center mx-auto">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-kids tracking-wide text-white">Coming Soon</h3>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  We're thoughtfully building this feature to make bedtime simpler and more magical. Check back soon for updates.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSignupModal(false)}
+                className="w-full py-3 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. SIGNUP / REGISTRATION POPUP MODAL */}
+      {false && showSignupModal && (
         <div id="signup-modal" className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
           <div className="absolute inset-0 cursor-pointer" onClick={() => setShowSignupModal(false)} />
           
@@ -1101,7 +1022,7 @@ export default function App() {
                   Unlock Monthly Membership
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  $4.99/month - Cancel anytime
+                  $9/month - Cancel anytime
                 </p>
               </div>
               <button 
@@ -1511,7 +1432,7 @@ export default function App() {
                       disabled={submitting}
                       className="w-full py-3 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-extrabold tracking-wide hover:shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all flex items-center justify-center gap-2 text-xs uppercase cursor-pointer"
                     >
-                      {submitting ? 'Contacting Secure billing node...' : 'Activate Subscription - $4.99/month'}
+                      {submitting ? 'Contacting Secure billing node...' : 'Activate Subscription - $9/month'}
                     </button>
                     <span className="block text-center text-[9px] text-slate-500 font-mono mt-3">
                       Secured via bank grade TLS. Never spamming. Opt-out in 1-click.
