@@ -31,6 +31,7 @@ import {
   Globe
 } from 'lucide-react';
 import { DatePicker } from './components/DatePicker';
+import cozyBedtimeFarmImage from './assets/images/cozy_bedtime_farm_1781463254008.jpg';
 
 const USA_TIMEZONES = [
   { value: 'America/New_York', label: 'Eastern Time (ET/New York)' },
@@ -661,7 +662,7 @@ export default function App() {
               </div>
               
               <img 
-                src="/src/assets/images/cozy_bedtime_farm_1781463254008.jpg" 
+                src={cozyBedtimeFarmImage} 
                 alt="Cozy bedtime farm under a peaceful starry countryside sky" 
                 className="block w-full aspect-[16/9] object-cover rounded-[20px]"
                 referrerPolicy="no-referrer"
