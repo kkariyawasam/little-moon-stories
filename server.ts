@@ -464,11 +464,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     }
   } catch (err: any) {
     console.error('Subscription creation failed:', err);
-    let userFriendlyMessage = err.message || 'An unknown server error occurred during registration.';
-    if (userFriendlyMessage.includes('relation "subscribers" does not exist')) {
-      userFriendlyMessage = "Database Setup Required: The 'subscribers' table has not been created in your Supabase project yet. Please run the provided SQL statements from the file '/supabase_schema.sql' in your Supabase SQL Editor to set it up instantly.";
-    }
-    res.status(500).json({ error: userFriendlyMessage });
+    res.status(500).json({ error: 'Unable to create your story plan right now. Please try again later.' });
   }
 });
 
