@@ -471,7 +471,10 @@ export default function App() {
         })
       });
 
-      const data = await response.json();
+      const responseType = response.headers.get('content-type') || '';
+      const data = responseType.includes('application/json')
+        ? await response.json()
+        : { error: await response.text() };
 
       if (response.ok) {
         if (data.checkoutSessionUrl) {
@@ -489,12 +492,16 @@ export default function App() {
           });
         }
       } else {
-        setSignupMessage({ type: 'error', text: data.error || 'Something went wrong.' });
+        const safeMessage = responseType.includes('application/json')
+          ? data.error
+          : `The registration service is temporarily unavailable (HTTP ${response.status}).`;
+        setSignupMessage({ type: 'error', text: safeMessage || 'Something went wrong.' });
         window.turnstile?.reset();
         setTurnstileToken('');
       }
     } catch (e: any) {
-      setSignupMessage({ type: 'error', text: `Cannot connect to server: ${e.message}` });
+      console.error('Registration request failed:', e);
+      setSignupMessage({ type: 'error', text: 'Cannot connect to the registration service. Please try again shortly.' });
     } finally {
       setSubmitting(false);
     }
