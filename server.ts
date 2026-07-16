@@ -1,14 +1,10 @@
-﻿import express, { Request, Response } from 'express';
-import { createServer as createViteServer } from 'vite';
+﻿import express from 'express';
+import type { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
-
-const __filename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
-const localDirname = typeof (globalThis as any).__dirname !== 'undefined' ? (globalThis as any).__dirname : path.dirname(__filename);
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
@@ -677,13 +673,14 @@ export default app;
 async function startServer() {
   if (!isProd) {
     console.log('Configuring Vite Development Middleware...');
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(localDirname, 'dist');
+    const distPath = path.resolve(process.cwd(), 'dist');
     console.log(`Production environment detected. Serving static assets from ${distPath}`);
     app.use(express.static(distPath));
     
