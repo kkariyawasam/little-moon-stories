@@ -768,6 +768,7 @@ export default function App() {
         </div>
       </header>
 
+      <main id="main-content">
       {/* 1. HERO SECTION */}
       <section id="hero" className="relative pt-10 pb-20 md:py-28 overflow-hidden mx-auto max-w-4xl px-6 md:px-12 z-10">
         <div className="flex flex-col items-center justify-center text-center space-y-8">
@@ -1715,6 +1716,7 @@ export default function App() {
           })}
         </div>
           </section>
+      </main>
 
       {/* 9. THE FOOTER */}
       <footer className="bg-slate-950 border-t border-[#111636]/40 py-16 relative z-25 overflow-hidden">
