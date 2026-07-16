@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS public.story_jobs (
   prompt_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   story_text TEXT,
   error_message TEXT,
+  generation_attempts INTEGER NOT NULL DEFAULT 0,
+  last_generation_failed_at TIMESTAMP WITH TIME ZONE,
   generated_at TIMESTAMP WITH TIME ZONE,
   sent_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -124,8 +126,19 @@ ALTER TABLE public.subscribers
 ALTER TABLE public.subscribers
   DROP COLUMN IF EXISTS expires_at;
 
+ALTER TABLE public.story_jobs
+  ADD COLUMN IF NOT EXISTS generation_attempts INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE public.story_jobs
+  ADD COLUMN IF NOT EXISTS last_generation_failed_at TIMESTAMP WITH TIME ZONE;
+
 CREATE INDEX IF NOT EXISTS idx_subscribers_paid_package
   ON public.subscribers(payment_status, package_end_date);
+
+-- A parent email can receive only one free story, even if requests arrive concurrently.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscribers_one_free_trial_per_email
+  ON public.subscribers(lower(btrim(parent_email)))
+  WHERE plan_type = 'free_trial';
 
 CREATE INDEX IF NOT EXISTS idx_children_subscriber_id
   ON public.children(subscriber_id);
@@ -202,7 +215,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.enqueue_signup_story_job(
   p_subscriber_id BIGINT,
-  p_minimum_lead_time INTERVAL DEFAULT interval '10 minutes'
+  p_minimum_lead_time INTERVAL DEFAULT interval '5 hours'
 )
 RETURNS UUID
 LANGUAGE plpgsql
@@ -266,6 +279,125 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.enqueue_signup_story_job_with_message(
+  p_subscriber_id BIGINT,
+  p_minimum_lead_time INTERVAL DEFAULT interval '5 hours'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  subscriber_record public.subscribers%ROWTYPE;
+  child_count INTEGER;
+  local_story_date DATE;
+  scheduled_delivery_at TIMESTAMP WITH TIME ZONE;
+  existing_story_job_id UUID;
+  inserted_story_job_id UUID;
+BEGIN
+  SELECT *
+    INTO subscriber_record
+  FROM public.subscribers
+  WHERE id = p_subscriber_id;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'code', 'subscriber_not_found',
+      'message', 'No subscriber was found for this id.'
+    );
+  END IF;
+
+  IF subscriber_record.payment_status <> 1 THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'code', 'not_paid',
+      'message', 'This parent is registered but not paid yet, so no same-day story job can be created.'
+    );
+  END IF;
+
+  SELECT count(*)
+    INTO child_count
+  FROM public.children
+  WHERE subscriber_id = p_subscriber_id;
+
+  IF child_count = 0 THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'code', 'missing_children',
+      'message', 'This subscriber has no child profile, so the story prompt would be incomplete.'
+    );
+  END IF;
+
+  local_story_date := (now() AT TIME ZONE subscriber_record.timezone)::date;
+  scheduled_delivery_at := (
+    (local_story_date + subscriber_record.delivery_time)
+    AT TIME ZONE subscriber_record.timezone
+  );
+
+  SELECT id
+    INTO existing_story_job_id
+  FROM public.story_jobs
+  WHERE subscriber_id = p_subscriber_id
+    AND story_date = local_story_date
+  LIMIT 1;
+
+  IF existing_story_job_id IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'ok', true,
+      'code', 'already_exists',
+      'story_job_id', existing_story_job_id,
+      'message', 'A same-day story job already exists for this parent.'
+    );
+  END IF;
+
+  IF scheduled_delivery_at < now() + p_minimum_lead_time THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'code', 'not_enough_lead_time',
+      'message', format(
+        'Same-day delivery was not created because the selected delivery time is less than %s away.',
+        p_minimum_lead_time
+      ),
+      'scheduled_delivery_at', scheduled_delivery_at
+    );
+  END IF;
+
+  IF subscriber_record.package_end_date IS NULL
+     OR subscriber_record.package_end_date < scheduled_delivery_at THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'code', 'package_not_active_for_delivery',
+      'message', 'The monthly package does not cover the selected same-day delivery time.',
+      'scheduled_delivery_at', scheduled_delivery_at,
+      'package_end_date', subscriber_record.package_end_date
+    );
+  END IF;
+
+  inserted_story_job_id := public.enqueue_signup_story_job(
+    p_subscriber_id,
+    p_minimum_lead_time
+  );
+
+  IF inserted_story_job_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'code', 'not_created',
+      'message', 'No story job was created. Please check payment status, package date, delivery time, and duplicate jobs.'
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'code', 'created',
+    'story_job_id', inserted_story_job_id,
+    'message', 'Same-day story job created successfully.',
+    'scheduled_delivery_at', scheduled_delivery_at
+  );
+END;
+$$;
+
 DROP FUNCTION IF EXISTS public.get_ready_story_deliveries(INTEGER);
 
 CREATE OR REPLACE FUNCTION public.claim_ready_story_generations(batch_size INTEGER DEFAULT 5)
@@ -298,7 +430,8 @@ AS $$
     SET
       status = 'generating',
       updated_at = now(),
-      error_message = NULL
+      error_message = NULL,
+      generation_attempts = j.generation_attempts + 1
     FROM picked p
     WHERE j.id = p.id
     RETURNING j.*
@@ -326,8 +459,16 @@ AS $$
 BEGIN
   UPDATE public.story_jobs
   SET
-    status = CASE WHEN p_retry THEN 'pending_generation' ELSE 'generation_failed' END,
+    status = CASE
+      WHEN p_retry = true AND generation_attempts < 3 THEN 'pending_generation'
+      ELSE 'generation_failed'
+    END,
+    scheduled_generation_at = CASE
+      WHEN p_retry = true AND generation_attempts < 3 THEN now() + interval '10 minutes'
+      ELSE scheduled_generation_at
+    END,
     updated_at = now(),
+    last_generation_failed_at = now(),
     error_message = p_error_message
   WHERE id = p_story_job_id;
 END;
@@ -486,6 +627,7 @@ DROP POLICY IF EXISTS "Allow updates for webhook confirmation on subscribers" ON
 
 REVOKE EXECUTE ON FUNCTION public.enqueue_tomorrow_story_jobs() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.enqueue_signup_story_job(BIGINT, INTERVAL) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.enqueue_signup_story_job_with_message(BIGINT, INTERVAL) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.claim_ready_story_generations(INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.mark_story_generation_failed(UUID, TEXT, BOOLEAN) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.claim_ready_story_deliveries(INTEGER) FROM PUBLIC, anon, authenticated;
@@ -494,6 +636,7 @@ REVOKE EXECUTE ON FUNCTION public.mark_story_delivery_failed(UUID, TEXT) FROM PU
 
 GRANT EXECUTE ON FUNCTION public.enqueue_tomorrow_story_jobs() TO service_role;
 GRANT EXECUTE ON FUNCTION public.enqueue_signup_story_job(BIGINT, INTERVAL) TO service_role;
+GRANT EXECUTE ON FUNCTION public.enqueue_signup_story_job_with_message(BIGINT, INTERVAL) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_ready_story_generations(INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_story_generation_failed(UUID, TEXT, BOOLEAN) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_ready_story_deliveries(INTEGER) TO service_role;

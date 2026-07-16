@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sparkles, 
   Moon, 
@@ -33,6 +33,58 @@ import {
 import { Analytics } from '@vercel/analytics/react';
 import { DatePicker } from './components/DatePicker';
 import cozyBedtimeFarmImage from './assets/images/cozy_bedtime_farm_1781463254008.jpg';
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: Record<string, unknown>) => string;
+      remove: (widgetId: string) => void;
+      reset: (widgetId?: string) => void;
+    };
+  }
+}
+
+const TurnstileWidget = ({ siteKey, onToken }: { siteKey: string; onToken: (token: string) => void }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let widgetId: string | null = null;
+    let cancelled = false;
+
+    const renderWidget = () => {
+      if (cancelled || widgetId || !containerRef.current || !window.turnstile) return;
+      widgetId = window.turnstile.render(containerRef.current, {
+        sitekey: siteKey,
+        theme: 'dark',
+        action: 'free_story_signup',
+        callback: (token: string) => onToken(token),
+        'expired-callback': () => onToken(''),
+        'error-callback': () => onToken('')
+      });
+    };
+
+    const existingScript = document.querySelector<HTMLScriptElement>('script[data-turnstile-script]');
+    if (existingScript) {
+      if (window.turnstile) renderWidget();
+      else existingScript.addEventListener('load', renderWidget, { once: true });
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstileScript = 'true';
+      script.addEventListener('load', renderWidget, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      cancelled = true;
+      if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
+    };
+  }, [siteKey, onToken]);
+
+  return <div ref={containerRef} className="min-h-[65px] flex justify-center" />;
+};
 
 const USA_TIMEZONES = [
   { value: 'America/New_York', label: 'Eastern Time (ET/New York)' },
@@ -166,15 +218,9 @@ export default function App() {
     setChildNames(formatted);
   }, [childrenList]);
 
-  const [ageRange, setAgeRange] = useState<'3-5' | '6-8'>('3-5');
-  const [deliveryTime, setDeliveryTime] = useState('19:30');
-  const [timezone, setTimezone] = useState(() => {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
-    } catch (e) {
-      return 'America/New_York';
-    }
-  });
+  const [ageRange, setAgeRange] = useState<'3-5' | '6-8' | ''>('');
+  const [deliveryTime, setDeliveryTime] = useState('');
+  const [timezone, setTimezone] = useState('');
   
   const [selectedTheme, setSelectedTheme] = useState('adventure');
   const [customTheme, setCustomTheme] = useState('');
@@ -185,6 +231,7 @@ export default function App() {
   
   const [submitting, setSubmitting] = useState(false);
   const [signupMessage, setSignupMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   // Config State
   const [config, setConfig] = useState<any>({});
@@ -196,12 +243,13 @@ export default function App() {
 
   // New Popup and Custom Tag States
   const [showSignupModal, setShowSignupModal] = useState(false);
-  const [selectedAnimals, setSelectedAnimals] = useState<string[]>(['Elephant']);
+  const [selectedAnimals, setSelectedAnimals] = useState<string[]>([]);
   const [customAnimalInput, setCustomAnimalInput] = useState('');
-  const [selectedHobbies, setSelectedHobbies] = useState<string[]>(['Reading']);
+  const [selectedHobbies, setSelectedHobbies] = useState<string[]>([]);
   const [customHobbyInput, setCustomHobbyInput] = useState('');
-  const [selectedThemes, setSelectedThemes] = useState<string[]>(['Space']);
+  const [selectedThemes, setSelectedThemes] = useState<string[]>([]);
   const [customThemeInput, setCustomThemeInput] = useState('');
+  const [builderStep, setBuilderStep] = useState(0);
 
   // Predefined options
   const themeOptions = ['adventure', 'kindness', 'friendship', 'animals', 'magic', 'nature', 'space', 'technology'];
@@ -221,6 +269,10 @@ export default function App() {
     {
       q: "Why are bedtime stories limited to 3-8 year olds?",
       a: "Children aged 3-8 have active imaginations and highly benefit from auditory storytelling to support language acquisition, vocabulary, and visualization skills. The vocabulary, story complexity, and soothing pace are optimized exactly for these pediatric categories."
+    },
+    {
+      q: "Why do you ask for my child's birthday?",
+      a: "We use your child's birthday to create stories with suitable vocabulary, length, and story complexity."
     },
     {
       q: "Can I change my child's storytelling preferences later?",
@@ -262,11 +314,110 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    const revealTargets = document.querySelectorAll<HTMLElement>('[data-scroll-reveal]');
+
+    if (!('IntersectionObserver' in window)) {
+      revealTargets.forEach((target) => target.classList.add('is-visible'));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      {
+        threshold: 0.16,
+        rootMargin: '0px 0px -8% 0px',
+      },
+    );
+
+    revealTargets.forEach((target) => observer.observe(target));
+
+    return () => observer.disconnect();
+  }, []);
+
+  const builderAnimalOptions = ['Elephant', 'Rabbit', 'Dolphin', 'Lion', 'Bear', 'Panda', 'Koala'];
+  const builderThemeOptions = ['Space', 'Fairytale', 'Superhero', 'Nature', 'Adventure', 'Magic Ocean'];
+  const builderHobbyOptions = ['Reading', 'Drawing', 'Puzzles', 'Singing', 'Building Blocks', 'Star Gazing'];
+  const addCustomChoice = (
+    value: string,
+    selected: string[],
+    setSelected: React.Dispatch<React.SetStateAction<string[]>>,
+    clearInput: React.Dispatch<React.SetStateAction<string>>
+  ) => {
+    const next = value.trim();
+    if (!next) return;
+
+    if (!selected.some(item => item.toLocaleLowerCase() === next.toLocaleLowerCase())) {
+      setSelected(previous => [...previous, next]);
+    }
+    clearInput('');
+  };
+  const builderSteps = [
+    'Friend',
+    'World',
+    'Joy',
+    'Little One',
+    'Bedtime',
+    'Inbox'
+  ];
+  const hasAnimal = selectedAnimals.length >= 2;
+  const hasTheme = selectedThemes.length >= 2;
+  const hasHobby = selectedHobbies.length >= 2;
+  const childrenComplete = childrenList.length > 0 && childrenList.every(child =>
+    child.nickname.trim() && child.gender && child.birthday
+  );
+  const deliveryTimeComplete = /^([01]\d|2[0-3]):[0-5]\d$/.test(deliveryTime);
+  const ageRangeComplete = ageRange === '3-5' || ageRange === '6-8';
+  const timezoneComplete = Boolean(timezone);
+  const deliveryComplete = deliveryTimeComplete && timezoneComplete && ageRangeComplete;
+  const emailComplete = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim()) && parentEmail.trim().length <= 254;
+  const builderCompletion = [hasAnimal, hasTheme, hasHobby, childrenComplete, deliveryComplete, emailComplete];
+  const canRegister = builderCompletion.every(Boolean);
+  const canSubmitRegistration = canRegister && (!config.turnstileRequired || Boolean(turnstileToken));
+  const canOpenBuilderStep = (step: number) => step === 0 || builderCompletion.slice(0, step).every(Boolean);
+  const goToBuilderStep = (step: number) => {
+    const targetStep = Math.min(Math.max(step, 0), builderSteps.length - 1);
+    if (canOpenBuilderStep(targetStep)) {
+      setBuilderStep(targetStep);
+    }
+  };
+  const continueBuilder = () => {
+    const nextIncomplete = builderCompletion.findIndex(done => !done);
+    if (nextIncomplete === -1) {
+      setBuilderStep(builderSteps.length - 1);
+      return;
+    }
+    setBuilderStep(nextIncomplete);
+  };
+
   // Submit subscription request
-  const handleSubscribe = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubscribe = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!parentEmail) {
       setSignupMessage({ type: 'error', text: 'Please fill in your parent email.' });
+      return;
+    }
+
+    if (!emailComplete) {
+      setSignupMessage({ type: 'error', text: 'Please enter a valid parent email address.' });
+      return;
+    }
+
+    if (config.turnstileRequired && !turnstileToken) {
+      setSignupMessage({ type: 'error', text: 'Please complete the security check.' });
+      return;
+    }
+
+    if (!hasAnimal || !hasTheme || !hasHobby || !deliveryComplete) {
+      setSignupMessage({ type: 'error', text: 'Please complete each required story plan step.' });
+      continueBuilder();
       return;
     }
 
@@ -314,7 +465,9 @@ export default function App() {
           preferred_theme: finalTheme,
           favorite_hobby: finalHobby,
           favorite_animal: finalAnimal,
-          plan_type: 'monthly'
+          plan_type: 'free_trial',
+          register_only: true,
+          turnstile_token: turnstileToken
         })
       });
 
@@ -324,14 +477,21 @@ export default function App() {
         if (data.checkoutSessionUrl) {
           // Redirect to PayPal checkout
           window.location.href = data.checkoutSessionUrl;
+        } else if (data.registered) {
+          setSignupMessage({
+            type: 'success',
+            text: 'Your free story request was saved. You will receive one personalized story tomorrow at your selected time.'
+          });
         } else {
           setSignupMessage({
             type: 'error',
-            text: 'Unable to start checkout. Please try again.'
+            text: 'Unable to save your story plan. Please try again.'
           });
         }
       } else {
         setSignupMessage({ type: 'error', text: data.error || 'Something went wrong.' });
+        window.turnstile?.reset();
+        setTurnstileToken('');
       }
     } catch (e: any) {
       setSignupMessage({ type: 'error', text: `Cannot connect to server: ${e.message}` });
@@ -522,7 +682,7 @@ export default function App() {
       {checkoutCancelled && (
         <div id="cancel-banner" className="relative z-50 bg-red-500/90 backdrop-blur-md text-white py-3 px-4 text-center font-semibold shadow-xl">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 text-xs sm:text-sm">
-            <span>PayPal checkout was cancelled. You can easily complete the process back in the pricing table.</span>
+            <span>PayPal checkout was cancelled. You can return to your story plan when you are ready.</span>
             <button 
               onClick={() => {
                 setCheckoutCancelled(false);
@@ -540,11 +700,11 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-twilight-950/85 border-b border-[#22274d]/40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => scrollTo('hero')}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-400 via-indigo-600 to-purple-600 flex items-center justify-center shadow-[0_0_15px_rgba(99,102,241,0.25)] relative overflow-hidden group">
-              <div className="absolute inset-0 bg-slate-950 opacity-10 group-hover:opacity-0 transition-opacity" />
-              <Moon className="w-5 h-5 text-amber-200 relative z-10 celestial-glow" />
-              <div className="absolute -top-1 -right-1 w-2 h-2 bg-amber-300 rounded-full" />
-            </div>
+            <img
+              src="/cozy-kid-tales-icon.svg"
+              alt="Cozy Kid Tales"
+              className="w-10 h-10 rounded-xl shadow-[0_0_15px_rgba(99,102,241,0.25)]"
+            />
             <div>
               <span className="text-2xl font-kids tracking-wide bg-gradient-to-r from-amber-200 via-yellow-300 to-rose-300 bg-clip-text text-transparent">
                 Cozy Kid Tales
@@ -555,22 +715,23 @@ export default function App() {
 
           <nav className="hidden lg:flex items-center gap-8 text-sm font-semibold text-[#a1a8c9]">
             <button 
-              onClick={() => scrollTo('hero')} 
-              className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === 'hero' ? 'text-amber-400' : ''}`}
+              onClick={() => scrollTo('sample-audio')}
+              className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === 'sample-audio' ? 'text-amber-400' : ''}`}
             >
-              Home
+              Listen
             </button>
             <button 
-              onClick={() => scrollTo('how-it-works')} 
-              className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === 'how-it-works' ? 'text-amber-400' : ''}`}
-            >
-              How It Works
-            </button>
-            <button 
-              onClick={() => scrollTo('advantages')} 
+              onClick={() => scrollTo('advantages')}
               className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === 'advantages' ? 'text-amber-400' : ''}`}
             >
-              Benefits
+              Why Audio
+            </button>
+
+            <button 
+              onClick={() => scrollTo('story-builder')}
+              className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === 'story-builder' ? 'text-amber-400' : ''}`}
+            >
+              Build Plan
             </button>
 
             <button 
@@ -590,7 +751,7 @@ export default function App() {
           <div>
             <button 
               onClick={() => {
-                setShowSignupModal(true);
+                scrollTo('story-builder');
               }}
               className="px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 bg-amber-300 rounded-full hover:bg-amber-200 hover:shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all cursor-pointer font-bold"
             >
@@ -625,12 +786,19 @@ export default function App() {
             <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-4">
               <button 
                 onClick={() => {
-                  setShowSignupModal(true);
+                  scrollTo('story-builder');
                 }}
                 className="px-8 py-4 rounded-xl text-slate-950 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 <Moon className="w-4 h-4" />
                 Create My Story Plan
+              </button>
+              <button
+                onClick={() => scrollTo('sample-audio')}
+                className="px-8 py-4 rounded-xl text-slate-100 border border-indigo-300/30 bg-slate-950/40 hover:bg-slate-900/70 hover:border-indigo-300/60 font-bold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+              >
+                <Volume2 className="w-4 h-4" />
+                Hear Sample First
               </button>
               
 
@@ -673,8 +841,26 @@ export default function App() {
         </div>
       </section>
 
+      {/* FUNNEL PATH */}
+      <section data-scroll-reveal className="scroll-reveal reveal-from-left py-10 bg-transparent border-y border-[#111636]/50 mx-auto max-w-5xl px-6 md:px-12 relative">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 reveal-stagger">
+          {[
+            ['01', 'Understand the ritual', 'See how the nightly email routine works.'],
+            ['02', 'Hear the voice', 'Preview the calm bedtime pacing.'],
+            ['03', 'See the value', 'Understand why audio-only helps bedtime.'],
+            ['04', 'Build the plan', 'Choose the story details and start when ready.']
+          ].map(([number, title, copy]) => (
+            <div key={number} className="rounded-2xl border border-[#232a5e]/60 bg-[#070b22]/70 p-4 text-left">
+              <span className="text-[10px] font-mono font-black text-amber-300">{number}</span>
+              <h3 className="mt-2 text-sm font-bold text-white">{title}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">{copy}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* 2. HOW IT WORKS */}
-      <section id="how-it-works" className="py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-6 md:px-12 relative">
+      <section id="how-it-works" data-scroll-reveal className="scroll-reveal reveal-from-right py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-6 md:px-12 relative">
         <div className="text-center space-y-4 max-w-3xl mx-auto">
           <span className="text-xs uppercase font-bold tracking-widest text-[#a5b4fc] font-mono">The Night Ritual</span>
           <h2 className="text-4xl sm:text-5xl font-kids tracking-wide text-white">
@@ -685,7 +871,7 @@ export default function App() {
           </p>
         </div>
 
-        <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-8 reveal-stagger">
           
           {/* Step 1 - Moonlit Pasture Grassy Green */}
           <div className="relative group p-7 rounded-2xl bg-gradient-to-b from-[#113a24] to-[#081a10] border-2 border-emerald-500/30 hover:border-emerald-400 transition-all text-left space-y-4 shadow-lg hover:shadow-[0_4px_30px_rgba(34,197,94,0.15)]">
@@ -724,11 +910,20 @@ export default function App() {
           </div>
 
         </div>
+
+        <div className="mt-10 flex justify-center">
+          <button
+            onClick={() => scrollTo('sample-audio')}
+            className="px-6 py-3 rounded-xl border border-indigo-300/30 bg-slate-950/40 text-slate-100 hover:border-amber-300/50 hover:text-amber-200 transition-all text-sm font-bold"
+          >
+            Hear the Sample Voice
+          </button>
+        </div>
       </section>
 
       {/* SAMPLE AUDIO STORY */}
-      <section id="sample-audio" className="py-16 bg-transparent border-t border-[#111636]/40 mx-auto max-w-4xl px-6 md:px-12 relative">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-8 items-center">
+      <section id="sample-audio" data-scroll-reveal className="scroll-reveal reveal-from-left py-16 bg-transparent border-t border-[#111636]/40 mx-auto max-w-4xl px-6 md:px-12 relative">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-8 items-center reveal-stagger">
           <div className="space-y-4 text-left">
             <span className="inline-flex items-center gap-2 text-xs uppercase font-bold tracking-widest text-amber-300 font-mono">
               <Volume2 className="w-4 h-4" />
@@ -740,6 +935,13 @@ export default function App() {
             <p className="text-slate-300 text-sm leading-relaxed font-light">
               A gentle preview helps parents understand the pacing, warmth, and sleepy tone children receive at bedtime.
             </p>
+            <button
+              onClick={() => scrollTo('advantages')}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-400/10 border border-indigo-300/30 text-indigo-100 hover:border-amber-300/50 hover:text-amber-200 transition-all text-sm font-bold"
+            >
+              Why audio works
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
 
           <div className="rounded-3xl border border-amber-300/40 bg-[#080d2a]/80 p-5 sm:p-6 shadow-[0_18px_40px_rgba(245,158,11,0.12)]">
@@ -776,8 +978,8 @@ export default function App() {
       </section>
 
       {/* 3. ADVANTAGES / WHY AUDIO COMFORT? */}
-      <section id="advantages" className="py-20 bg-transparent border-t border-[#111636]/40 mx-auto max-w-5xl px-6 md:px-12 relative">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      <section id="advantages" data-scroll-reveal className="scroll-reveal reveal-from-right py-20 bg-transparent border-t border-[#111636]/40 mx-auto max-w-5xl px-6 md:px-12 relative">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center reveal-stagger">
           
           <div className="lg:col-span-6 space-y-6 text-left">
             <span className="text-xs uppercase font-bold tracking-widest text-[#828bbd] font-mono">Screen-Free Bedtime</span>
@@ -790,7 +992,7 @@ export default function App() {
 
           </div>
 
-          <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-5 reveal-stagger">
             
             <div className="p-6 rounded-2xl bg-[#090b1c] border border-[#22285a]/40 text-left space-y-3 shadow-md hover:border-[#384088] transition-colors">
               <div className="w-10 h-10 rounded-lg bg-amber-400/10 text-amber-300 flex items-center justify-center border border-amber-400/20">
@@ -845,26 +1047,583 @@ export default function App() {
           </div>
 
         </div>
+        <div className="mt-12 flex justify-center">
+          <button
+            onClick={() => scrollTo('story-builder')}
+            className="px-7 py-3.5 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_22px_rgba(245,158,11,0.18)] transition-all flex items-center justify-center gap-2 text-sm"
+          >
+            Build My Child's Story Plan
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </section>
 
 
 
+      {/* STORY PLAN BUILDER */}
+      <section id="story-builder" data-scroll-reveal className="scroll-reveal reveal-from-left py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-6 md:px-12 relative">
+        <div className="text-center space-y-4 max-w-2xl mx-auto mb-12">
+          <span className="text-xs uppercase font-bold tracking-widest text-amber-300 font-mono">Free Story Preview</span>
+          <h2 className="text-4xl sm:text-5xl font-kids tracking-wide text-white">Create Your Free Story</h2>
+          <p className="text-slate-300 text-sm sm:text-base font-light leading-relaxed">
+            Choose the story details now, and receive one personalized audio story tomorrow at your selected time. No payment required.
+          </p>
+        </div>
+
+        <div className="max-w-2xl mx-auto reveal-stagger">
+          <div className="rounded-3xl border border-indigo-500/30 bg-[#090d2a]/80 p-4 sm:p-6 shadow-[0_18px_45px_rgba(15,23,42,0.35)]">
+            <div className="mb-5 rounded-2xl border border-[#26306a] bg-[#050814]/70 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] uppercase tracking-widest text-amber-300 font-bold font-mono">
+                  Step {builderStep + 1} of {builderSteps.length}
+                </span>
+                {builderStep > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setBuilderStep(builderStep - 1)}
+                    className="text-xs font-bold text-slate-300 hover:text-amber-200 transition-colors"
+                  >
+                    Back
+                  </button>
+                )}
+              </div>
+              {(selectedAnimals.length > 0 || selectedThemes.length > 0 || selectedHobbies.length > 0 || childrenList.some(child => child.nickname.trim())) && (
+                <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                  Your plan so far:{' '}
+                  <span className="text-slate-200">
+                    {[
+                      selectedAnimals.join(', '),
+                      selectedThemes.join(', '),
+                      selectedHobbies.join(', '),
+                      childrenList.map(child => child.nickname.trim()).filter(Boolean).join(', ')
+                    ].filter(Boolean).join(' - ')}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <div className="hidden">
+              {builderSteps.map((step, index) => {
+                const isActive = builderStep === index;
+                const isDone = builderCompletion[index];
+                const isAllowed = index === 0 || builderCompletion.slice(0, index).every(Boolean);
+                return (
+                  <button
+                    key={step}
+                    type="button"
+                    disabled={!isAllowed}
+                    onClick={() => goToBuilderStep(index)}
+                    className={`h-16 rounded-xl border px-2 text-center transition-all ${
+                      isActive
+                        ? 'border-amber-300 bg-amber-300/10 text-amber-200'
+                        : isDone
+                        ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200'
+                        : isAllowed
+                        ? 'border-[#26306a] bg-[#050915] text-slate-300 hover:border-indigo-400/60'
+                        : 'border-[#171b3f] bg-[#050915]/40 text-slate-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="block text-[10px] font-mono font-bold">{String(index + 1).padStart(2, '0')}</span>
+                    <span className="block text-[11px] font-bold">{step}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="rounded-2xl border border-[#232a5e]/70 bg-[#050814]/80 p-4 sm:p-6 text-left min-h-[25rem]">
+              {builderStep === 0 && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-kids tracking-wide text-white">Pick a gentle story friend</h3>
+                    <p className="text-sm text-slate-400 mt-1">Choose at least 2 animal companions your child would love to meet at bedtime.</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {builderAnimalOptions.map((animal) => {
+                      const selected = selectedAnimals.includes(animal);
+                      return (
+                        <button
+                          key={animal}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAnimals(prev =>
+                              selected ? prev.filter(item => item !== animal) : [...prev, animal]
+                            );
+                          }}
+                          className={`min-h-12 rounded-xl border px-3 text-sm font-semibold transition-all ${
+                            selected
+                              ? 'border-amber-300 bg-amber-300/15 text-amber-100'
+                              : 'border-[#26306a] bg-[#080d25] text-slate-300 hover:border-amber-300/50'
+                          }`}
+                        >
+                          {animal}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={customAnimalInput}
+                      onChange={(event) => setCustomAnimalInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          addCustomChoice(customAnimalInput, selectedAnimals, setSelectedAnimals, setCustomAnimalInput);
+                        }
+                      }}
+                      placeholder="Other animal"
+                      className="flex-1 px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addCustomChoice(customAnimalInput, selectedAnimals, setSelectedAnimals, setCustomAnimalInput)}
+                      className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {selectedAnimals.filter(animal => !builderAnimalOptions.includes(animal)).length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedAnimals.filter(animal => !builderAnimalOptions.includes(animal)).map(animal => (
+                        <button
+                          key={animal}
+                          type="button"
+                          onClick={() => setSelectedAnimals(previous => previous.filter(item => item !== animal))}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100"
+                          title={`Remove ${animal}`}
+                        >
+                          {animal}<X className="h-3.5 w-3.5" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!hasAnimal}
+                    onClick={() => goToBuilderStep(1)}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                  >
+                    {hasAnimal ? 'Choose the Story World' : `Choose ${Math.max(0, 2 - selectedAnimals.length)} More`}
+                  </button>
+                </div>
+              )}
+
+              {builderStep === 1 && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-kids tracking-wide text-white">Choose tonight's cozy world</h3>
+                    <p className="text-sm text-slate-400 mt-1">Pick at least 2 cozy worlds where your child's sleepy adventures can begin.</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {builderThemeOptions.map((theme) => {
+                      const selected = selectedThemes.includes(theme);
+                      return (
+                        <button
+                          key={theme}
+                          type="button"
+                          onClick={() => {
+                            setSelectedThemes(prev =>
+                              selected ? prev.filter(item => item !== theme) : [...prev, theme]
+                            );
+                          }}
+                          className={`min-h-12 rounded-xl border px-3 text-sm font-semibold transition-all ${
+                            selected
+                              ? 'border-indigo-300 bg-indigo-400/15 text-indigo-100'
+                              : 'border-[#26306a] bg-[#080d25] text-slate-300 hover:border-indigo-300/50'
+                          }`}
+                        >
+                          {theme}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={customThemeInput}
+                      onChange={(event) => setCustomThemeInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          addCustomChoice(customThemeInput, selectedThemes, setSelectedThemes, setCustomThemeInput);
+                        }
+                      }}
+                      placeholder="Other theme"
+                      className="flex-1 px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addCustomChoice(customThemeInput, selectedThemes, setSelectedThemes, setCustomThemeInput)}
+                      className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {selectedThemes.filter(theme => !builderThemeOptions.includes(theme)).length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedThemes.filter(theme => !builderThemeOptions.includes(theme)).map(theme => (
+                        <button
+                          key={theme}
+                          type="button"
+                          onClick={() => setSelectedThemes(previous => previous.filter(item => item !== theme))}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-indigo-300/50 bg-indigo-300/10 px-3 py-1.5 text-xs font-semibold text-indigo-100"
+                          title={`Remove ${theme}`}
+                        >
+                          {theme}<X className="h-3.5 w-3.5" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!hasTheme}
+                    onClick={() => goToBuilderStep(2)}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                  >
+                    {hasTheme ? 'Add Their Favorite Joy' : `Choose ${Math.max(0, 2 - selectedThemes.length)} More`}
+                  </button>
+                </div>
+              )}
+
+              {builderStep === 2 && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-kids tracking-wide text-white">What little joy should appear in the story?</h3>
+                    <p className="text-sm text-slate-400 mt-1">Choose at least 2 things your child enjoys, so the stories have more room to vary.</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {builderHobbyOptions.map((hobby) => {
+                      const selected = selectedHobbies.includes(hobby);
+                      return (
+                        <button
+                          key={hobby}
+                          type="button"
+                          onClick={() => {
+                            setSelectedHobbies(prev =>
+                              selected ? prev.filter(item => item !== hobby) : [...prev, hobby]
+                            );
+                          }}
+                          className={`min-h-12 rounded-xl border px-3 text-sm font-semibold transition-all ${
+                            selected
+                              ? 'border-emerald-300 bg-emerald-400/15 text-emerald-100'
+                              : 'border-[#26306a] bg-[#080d25] text-slate-300 hover:border-emerald-300/50'
+                          }`}
+                        >
+                          {hobby}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={customHobbyInput}
+                      onChange={(event) => setCustomHobbyInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          addCustomChoice(customHobbyInput, selectedHobbies, setSelectedHobbies, setCustomHobbyInput);
+                        }
+                      }}
+                      placeholder="Other hobby"
+                      className="flex-1 px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addCustomChoice(customHobbyInput, selectedHobbies, setSelectedHobbies, setCustomHobbyInput)}
+                      className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {selectedHobbies.filter(hobby => !builderHobbyOptions.includes(hobby)).length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedHobbies.filter(hobby => !builderHobbyOptions.includes(hobby)).map(hobby => (
+                        <button
+                          key={hobby}
+                          type="button"
+                          onClick={() => setSelectedHobbies(previous => previous.filter(item => item !== hobby))}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/50 bg-emerald-300/10 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                          title={`Remove ${hobby}`}
+                        >
+                          {hobby}<X className="h-3.5 w-3.5" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!hasHobby}
+                    onClick={() => goToBuilderStep(3)}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                  >
+                    {hasHobby ? 'Tell Us About Your Child' : `Choose ${Math.max(0, 2 - selectedHobbies.length)} More`}
+                  </button>
+                </div>
+              )}
+
+              {builderStep === 3 && (
+                <div className="space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h3 className="text-2xl font-kids tracking-wide text-white">Tell us about the little dreamer</h3>
+                      <p className="text-sm text-slate-400 mt-1">Add at least 1 complete child profile so we can shape a child-friendly story voice.</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={childrenList.length >= 5}
+                      onClick={handleAddChild}
+                      className="px-4 py-2.5 rounded-xl bg-amber-300/10 border border-amber-300/40 text-amber-200 disabled:opacity-40 text-xs font-bold uppercase"
+                    >
+                      Add Child
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {childrenList.map((child, index) => (
+                      <div key={child.id} className="rounded-2xl border border-[#232a5e] bg-[#080d25] p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-bold uppercase tracking-widest text-indigo-300">Child {index + 1}</span>
+                          {childrenList.length > 1 && (
+                            <button type="button" onClick={() => handleRemoveChild(child.id)} className="text-xs text-rose-300 font-bold">
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={child.nickname}
+                          onChange={(event) => handleUpdateChild(child.id, 'nickname', event.target.value)}
+                          placeholder="Child name or nickname"
+                          className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <select
+                            value={child.gender}
+                            onChange={(event) => handleUpdateChild(child.id, 'gender', event.target.value)}
+                            className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                          >
+                            <option value="">Gender</option>
+                            <option value="female">Female / Girl</option>
+                            <option value="male">Male / Boy</option>
+                            <option value="other">Other / Non-binary</option>
+                          </select>
+                          <DatePicker value={child.birthday} onChange={(value) => handleUpdateChild(child.id, 'birthday', value)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!childrenComplete}
+                    onClick={() => goToBuilderStep(4)}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                  >
+                    {childrenComplete ? 'Choose Bedtime Delivery' : 'Complete 1 Child Profile'}
+                  </button>
+                </div>
+              )}
+
+              {builderStep === 4 && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-kids tracking-wide text-white">Set the bedtime story hour</h3>
+                    <p className="text-sm text-slate-400 mt-1">Choose when the story should arrive in the parent's timezone.</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1.5">Delivery Time</label>
+                      <input
+                        type="time"
+                        required
+                        value={deliveryTime}
+                        onChange={(event) => setDeliveryTime(event.target.value)}
+                        className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                      />
+                      {!deliveryTimeComplete && (
+                        <p className="mt-1.5 text-[10px] text-amber-200">Required</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1.5">Age Range</label>
+                      <select
+                        required
+                        value={ageRange}
+                        onChange={(event) => setAgeRange(event.target.value as '3-5' | '6-8')}
+                        className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                      >
+                        <option value="" disabled>Select age range</option>
+                        <option value="3-5">3-5</option>
+                        <option value="6-8">6-8</option>
+                      </select>
+                      {!ageRangeComplete && (
+                        <p className="mt-1.5 text-[10px] text-amber-200">Required</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1.5">Timezone</label>
+                      <select
+                        required
+                        value={timezone}
+                        onChange={(event) => setTimezone(event.target.value)}
+                        className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                      >
+                        <option value="" disabled>Select timezone</option>
+                        {getTimezoneOptions(Intl.DateTimeFormat().resolvedOptions().timeZone).map((tz) => (
+                          <option key={tz.value} value={tz.value}>{tz.label}</option>
+                        ))}
+                      </select>
+                      {!timezoneComplete && (
+                        <p className="mt-1.5 text-[10px] text-amber-200">Required</p>
+                      )}
+                    </div>
+                  </div>
+                  {!deliveryComplete && (
+                    <p className="text-xs text-amber-200/90">
+                      Delivery time, age range, and timezone are all required.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!deliveryComplete}
+                    onClick={() => goToBuilderStep(5)}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                  >
+                    Add Your Email
+                  </button>
+                </div>
+              )}
+
+              {builderStep === 5 && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-kids tracking-wide text-white">Where should the bedtime magic arrive?</h3>
+                    <p className="text-sm text-slate-400 mt-1">We send the story link to the parent, not a child-facing app.</p>
+                  </div>
+                  <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-xs sm:text-sm text-amber-100 leading-relaxed">
+                    Your free personalized story will be sent tomorrow at your selected time. No payment details are needed.
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={parentEmail}
+                    onChange={(event) => setParentEmail(event.target.value)}
+                    placeholder="Parent email address"
+                    className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                  />
+                  {parentEmail.trim() && !emailComplete && (
+                    <p className="text-xs text-amber-200/90">
+                      Please enter a valid email address.
+                    </p>
+                  )}
+                  {!canRegister && (
+                    <p className="text-xs text-amber-200/90">
+                      Enter a valid parent email to save the story plan.
+                    </p>
+                  )}
+                  {config.turnstileRequired && config.turnstileSiteKey && (
+                    <TurnstileWidget siteKey={config.turnstileSiteKey} onToken={setTurnstileToken} />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (canRegister) {
+                        handleSubscribe();
+                      } else {
+                        continueBuilder();
+                      }
+                    }}
+                    disabled={submitting || !canSubmitRegistration}
+                    className={`w-full py-3 rounded-xl font-bold text-sm uppercase tracking-wider transition-all ${
+                      canSubmitRegistration
+                        ? 'bg-amber-300 hover:bg-amber-200 text-slate-950'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {submitting ? 'Saving Free Story...' : canRegister ? 'Request My Free Story' : 'Complete Story Details'}
+                  </button>
+                  {signupMessage && (
+                    <p className={`text-xs leading-relaxed ${
+                      signupMessage.type === 'success' ? 'text-emerald-200' : 'text-rose-200'
+                    }`}>
+                      {signupMessage.text}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <aside className="hidden">
+            <span className="text-[10px] uppercase tracking-widest text-amber-300 font-bold font-mono">Plan Preview</span>
+            <h3 className="mt-2 text-2xl font-kids tracking-wide text-white">Your Cozy Plan</h3>
+            <div className="mt-5 space-y-3 text-sm">
+              {[
+                ['Animal', selectedAnimals.join(', ') || 'Choose animal'],
+                ['Theme', selectedThemes.join(', ') || 'Choose theme'],
+                ['Hobby', selectedHobbies.join(', ') || 'Choose hobby'],
+                ['Children', childrenList.map(child => child.nickname.trim()).filter(Boolean).join(', ') || 'Add child details'],
+                ['Delivery', deliveryComplete ? `${deliveryTime} ${getTzAbbreviation(timezone)}` : 'Choose time'],
+                ['Email', parentEmail || 'Add parent email']
+              ].map(([label, value], index) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => goToBuilderStep(index)}
+                  className="w-full rounded-xl border border-[#26306a] bg-[#070b22] px-3 py-3 text-left hover:border-amber-300/40 transition-colors"
+                >
+                  <span className="block text-[10px] uppercase tracking-widest text-slate-500 font-bold">{label}</span>
+                  <span className="block mt-1 text-slate-200 truncate">{value}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 rounded-2xl bg-emerald-400/10 border border-emerald-300/20 p-4 text-xs text-emerald-100 leading-relaxed">
+              Preferences stay fixed for the month, while each nightly story is still newly created from those choices.
+            </div>
+          </aside>
+        </div>
+      </section>
+
       {/* 5. PRICING TABLE SECTION */}
-      <section id="pricing" className="py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-6 md:px-12 relative">
+      <section id="pricing" data-scroll-reveal className="scroll-reveal reveal-from-right py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-6 md:px-12 relative">
         <div className="text-center space-y-4 max-w-2xl mx-auto mb-16">
           <span className="text-xs uppercase font-bold tracking-widest text-[#828bbd] font-mono">Transparent Plans</span>
           <h2 className="text-4xl sm:text-5xl font-kids tracking-wide text-white">Start Your Bedtime Journey</h2>
         </div>
 
-        <div className="max-w-md mx-auto">
-          {/* Premium Pricing Card - High-end Glowing Border */}
-          <div className="p-8 rounded-3xl bg-gradient-to-br from-[#121b4a] to-[#0a113a] border-2 border-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.2)] flex flex-col justify-between space-y-8 text-left relative overflow-hidden">
-            <div className="absolute top-4 right-4 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[9px] uppercase tracking-widest font-bold px-2.5 py-0.5 rounded-full font-mono">
-              Parent Favorite
+        <div className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto items-stretch reveal-stagger">
+          <div className="p-7 rounded-3xl bg-[#0b1238] border-2 border-emerald-300/70 shadow-[0_0_26px_rgba(110,231,183,0.12)] flex flex-col justify-between gap-8 text-left relative overflow-hidden">
+            <div className="space-y-4">
+              <span className="inline-flex text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">Try It Free</span>
+              <h3 className="text-2xl font-bold text-white">One Free Story</h3>
+              <div className="flex items-baseline gap-1 font-mono">
+                <span className="text-4xl font-black text-emerald-200">$0</span>
+                <span className="text-xs text-slate-300">one time</span>
+              </div>
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Register your child's story preferences and receive one personalized audio story tomorrow at your selected time.
+              </p>
+              <ul className="space-y-3 text-xs text-slate-200">
+                <li className="flex items-center gap-2.5"><Check className="w-4 h-4 shrink-0 text-emerald-300" /><span>No payment details required</span></li>
+                <li className="flex items-center gap-2.5"><Check className="w-4 h-4 shrink-0 text-emerald-300" /><span>Personalized from your choices</span></li>
+                <li className="flex items-center gap-2.5"><Check className="w-4 h-4 shrink-0 text-emerald-300" /><span>Sent to the parent's email</span></li>
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={() => scrollTo('story-builder')}
+              className="w-full py-3 rounded-xl text-slate-950 bg-emerald-200 hover:bg-emerald-100 font-bold text-xs uppercase tracking-wider transition-colors"
+            >
+              Request My Free Story
+            </button>
+          </div>
+
+          <div className="p-7 rounded-3xl bg-gradient-to-br from-[#121b4a] to-[#0a113a] border border-indigo-400/40 flex flex-col justify-between gap-8 text-left relative overflow-hidden">
+            <div className="absolute top-4 right-4 bg-amber-300/10 text-amber-200 border border-amber-300/30 text-[9px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full font-mono">
+              Coming Soon
             </div>
 
             <div className="space-y-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#b4bcff] font-mono">Unlimited Bedtime Circle</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#b4bcff] font-mono">30 Nights of Stories</span>
               <h3 className="text-2xl font-bold text-white">Monthly Plan</h3>
               
               <div className="flex items-baseline gap-1 font-mono">
@@ -873,7 +1632,7 @@ export default function App() {
               </div>
 
               <p className="text-xs text-indigo-200 leading-relaxed font-light">
-                Unlock full pediatric custom storytelling every day. Safe habits for peaceful parent bedtimes.
+                Receive a newly created personalized story each night for one month.
               </p>
 
               <ul className="mt-6 space-y-3 text-xs text-indigo-100 font-light">
@@ -896,21 +1655,22 @@ export default function App() {
               </ul>
             </div>
 
-            <button 
-              onClick={() => {
-                setShowSignupModal(true);
-              }}
-              className="w-full py-3 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer text-center shadow-lg shadow-amber-500/10"
+            <div>
+              <button
+              type="button"
+              disabled
+              className="w-full py-3 rounded-xl text-slate-400 bg-slate-800/80 border border-slate-700 font-bold text-xs uppercase tracking-wider cursor-not-allowed text-center"
             >
-              Create My Story Plan
+              Not Available Yet
             </button>
+            </div>
           </div>
 
         </div>
       </section>
 
       {/* 8. PARENT FAQ ACCORDION */}
-      <section id="faq" className="py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-3xl px-6 md:px-12 relative">
+      <section id="faq" data-scroll-reveal className="scroll-reveal reveal-from-left py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-3xl px-6 md:px-12 relative">
         <div className="text-center space-y-4 max-w-2xl mx-auto mb-12">
           <span className="text-xs uppercase font-bold tracking-widest text-[#828bbd] font-mono">Expert Guidance</span>
           <h2 className="text-4xl font-kids tracking-wide text-white">Sleep Guide & FAQs</h2>
@@ -919,7 +1679,7 @@ export default function App() {
           </p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 reveal-stagger">
           {faqs.map((faq, index) => {
             const isOpen = openFaqIndex === index;
             return (
@@ -955,9 +1715,11 @@ export default function App() {
           
           <div className="flex flex-col sm:flex-row items-center justify-between gap-5">
             <div className="flex items-center gap-3 text-left">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-400 to-rose-400 flex items-center justify-center font-mono font-black text-xs text-slate-950">
-                L
-              </div>
+              <img
+                src="/cozy-kid-tales-icon.svg"
+                alt="Cozy Kid Tales"
+                className="w-8 h-8 rounded-lg shadow-[0_0_12px_rgba(99,102,241,0.2)]"
+              />
               <div>
                 <span className="block text-sm font-bold text-slate-300">Cozy Kid Tales LLC (c) 2026</span>
                 <span className="block text-[10px] text-slate-500 font-mono">Global Bedtime Companion</span>

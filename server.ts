@@ -15,7 +15,50 @@ const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === '
 const isVercel = process.env.VERCEL === '1';
 const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
 const mockCheckoutEnabled = !isProd && process.env.ALLOW_MOCK_CHECKOUT === 'true';
+const turnstileRequired = isProd || process.env.TURNSTILE_REQUIRED === 'true';
 const port = 3000;
+
+const signupAttempts = new Map<string, number[]>();
+const isRateLimited = (key: string, limit: number, windowMs: number) => {
+  const now = Date.now();
+  const recent = (signupAttempts.get(key) || []).filter(timestamp => now - timestamp < windowMs);
+  if (recent.length >= limit) {
+    signupAttempts.set(key, recent);
+    return true;
+  }
+  recent.push(now);
+  signupAttempts.set(key, recent);
+  return false;
+};
+
+const getClientIp = (req: Request) => {
+  const forwarded = req.header('x-forwarded-for');
+  return forwarded?.split(',')[0]?.trim() || req.ip || 'unknown';
+};
+
+const verifyTurnstile = async (token: unknown, remoteIp: string) => {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) return !turnstileRequired;
+  if (typeof token !== 'string' || !token || token.length > 2048) return false;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, response: token, remoteip: remoteIp }),
+      signal: controller.signal
+    });
+    if (!response.ok) return false;
+    const result = await response.json() as { success?: boolean; action?: string };
+    return result.success === true && (!result.action || result.action === 'free_story_signup');
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 
 // Initialize clients conditionally to prevent startup crashes if keys are missing
 let supabase: any = null;
@@ -159,7 +202,7 @@ interface Subscriber {
   preferred_theme: string;
   favorite_hobby: string;
   favorite_animal: string;
-  plan_type: 'monthly';
+  plan_type: 'monthly' | 'free_trial';
   payment_status: number; // 0 for unpaid, 1 for paid
   package_end_date: string | null;
   payment_provider_order_id?: string;
@@ -205,9 +248,17 @@ const mockSubscribers: Subscriber[] = [
 app.disable('x-powered-by');
 
 app.use((req: Request, res: Response, next) => {
+  if (isProd) {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://challenges.cloudflare.com https://vitals.vercel-insights.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+    );
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
   next();
 });
 
@@ -218,40 +269,13 @@ app.use(express.json({ limit: '25kb' }));
 app.get('/api/config', (req: Request, res: Response) => {
   res.json({
     checkoutEnabled,
+    turnstileRequired,
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null
   });
 });
 
-app.get('/api/subscribers', async (req: Request, res: Response) => {
-  const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey || req.header('x-admin-api-key') !== adminKey) {
-    res.status(404).json({ error: 'Not found' });
-    return;
-  }
-
-  try {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('subscribers')
-        .select('*, children:children(*)')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      res.json(data);
-    } else {
-      res.json(mockSubscribers.sort((a, b) => b.created_at.localeCompare(a.created_at)));
-    }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Subscriber action endpoint (Signup + Payment handler)
+// Subscriber action endpoint (Signup + optional payment handler)
 app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> => {
-  if (!checkoutEnabled) {
-    res.status(503).json({ error: 'Coming Soon. Checkout is not available yet.' });
-    return;
-  }
-
   const {
     parent_email,
     child_names,
@@ -269,6 +293,30 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
+  if (turnstileRequired && (!process.env.TURNSTILE_SITE_KEY || !process.env.TURNSTILE_SECRET_KEY)) {
+    res.status(503).json({ error: 'Registration security is not configured.' });
+    return;
+  }
+
+  const clientIp = getClientIp(req);
+  const normalizedEmailForLimit = typeof parent_email === 'string' ? parent_email.trim().toLowerCase() : 'invalid';
+  if (isRateLimited(`ip:${clientIp}`, 5, 15 * 60 * 1000)) {
+    res.setHeader('Retry-After', '900');
+    res.status(429).json({ error: 'Too many story requests. Please try again later.' });
+    return;
+  }
+
+  if (!(await verifyTurnstile(req.body.turnstile_token, clientIp))) {
+    res.status(400).json({ error: 'Security check failed. Please refresh the page and try again.' });
+    return;
+  }
+
+  if (isRateLimited(`email:${normalizedEmailForLimit}`, 3, 24 * 60 * 60 * 1000)) {
+    res.setHeader('Retry-After', '86400');
+    res.status(429).json({ error: 'Too many story requests. Please try again later.' });
+    return;
+  }
+
   let normalizedChildren: ChildDetail[];
   try {
     if (!isValidEmail(parent_email)) throw new Error('Please provide a valid parent email.');
@@ -282,9 +330,12 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
   }
 
   let tempSubId = `sub_temp_${Date.now().toString(36)}`;
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const requestedPlan = req.body.plan_type === 'free_trial' ? 'free_trial' : 'monthly';
+  const expiresAt = requestedPlan === 'monthly'
+    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    : null;
 
-  const newSub: Subscriber = {
+    const newSub: Subscriber = {
     id: '', // Will be updated as soon as DB generates the SERIAL/IDENTITY id starting from 1
     parent_email: parent_email.trim().toLowerCase(),
     child_names: cleanText(child_names, normalizedChildren.map(c => c.nickname).join(' & '), 250),
@@ -295,7 +346,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     preferred_theme: cleanText(preferred_theme, 'Adventure', 250),
     favorite_hobby: cleanText(favorite_hobby, 'reading', 250),
     favorite_animal: cleanText(favorite_animal, 'elephant', 250),
-    plan_type: 'monthly',
+    plan_type: requestedPlan,
     payment_status: 0,
     package_end_date: expiresAt,
     created_at: new Date().toISOString()
@@ -306,6 +357,21 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
 
     // 1. Save to database
     if (supabase) {
+      if (requestedPlan === 'free_trial') {
+        const { data: existingFreeTrial, error: lookupError } = await supabase
+          .from('subscribers')
+          .select('id')
+          .eq('parent_email', newSub.parent_email)
+          .eq('plan_type', 'free_trial')
+          .limit(1);
+
+        if (lookupError) throw lookupError;
+        if (existingFreeTrial?.length) {
+          res.status(409).json({ error: 'A free story has already been requested with this email address.' });
+          return;
+        }
+      }
+
       // Note: We let Supabase/PostgreSQL generate the auto-incrementing integer key (starting from 1)
       const { data, error } = await supabase
         .from('subscribers')
@@ -325,6 +391,10 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
         .select('id');
 
       if (error) {
+        if (error.code === '23505' && requestedPlan === 'free_trial') {
+          res.status(409).json({ error: 'A free story has already been requested with this email address.' });
+          return;
+        }
         console.error('Supabase insert error:', error);
         throw error;
       }
@@ -369,7 +439,19 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
       mockSubscribers.push(newSub);
     }
 
-    // 2. PayPal Integration
+    // 2. If checkout is not enabled yet, stop after saving the registration.
+    // The plan stays unpaid until a real payment flow updates payment_status to 1.
+    if (!checkoutEnabled || req.body.register_only === true) {
+      res.json({
+        registered: true,
+        subscriberId: finalSubscriberId,
+        planType: requestedPlan,
+        paymentStatus: 'unpaid'
+      });
+      return;
+    }
+
+    // 3. PayPal Integration
     {
       const redirectBase = process.env.APP_URL || `http://localhost:${port}`;
       const accessToken = await getPayPalAccessToken();

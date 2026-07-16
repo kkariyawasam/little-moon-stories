@@ -1,0 +1,33 @@
+
+[functions.create-story-jobs]
+enabled = true
+verify_jwt = false
+import_map = "./functions/create-story-jobs/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/create-story-jobs/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/create-story-jobs/*.html" ]
+
+[functions.generate-story-audio]
+enabled = true
+verify_jwt = false
+import_map = "./functions/generate-story-audio/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/generate-story-audio/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/generate-story-audio/*.html" ]
+
+[functions.deliver-stories]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deliver-stories/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/deliver-stories/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/deliver-stories/*.html" ]
