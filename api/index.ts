@@ -247,7 +247,7 @@ app.use((req: Request, res: Response, next) => {
   if (isProd) {
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://challenges.cloudflare.com https://vitals.vercel-insights.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+      "default-src 'self'; script-src 'self' https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com; media-src 'self' blob:; connect-src 'self' https://challenges.cloudflare.com https://vitals.vercel-insights.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
     );
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
