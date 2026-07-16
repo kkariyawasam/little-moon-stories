@@ -265,6 +265,7 @@ app.use(express.json({ limit: '25kb' }));
 app.get('/api/config', (req: Request, res: Response) => {
   res.json({
     checkoutEnabled,
+    registrationConfigured: Boolean(supabase),
     turnstileRequired,
     turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null
   });
@@ -283,6 +284,11 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     favorite_hobby,
     favorite_animal
   } = req.body;
+
+  if (isProd && !supabase) {
+    res.status(503).json({ error: 'Registration is temporarily unavailable.' });
+    return;
+  }
 
   if (!parent_email || !child_names) {
     res.status(400).json({ error: 'Parent email and child name are required.' });
