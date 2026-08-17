@@ -31,7 +31,6 @@ import {
   Globe
 } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
-import { DatePicker } from './components/DatePicker';
 import cozyBedtimeFarmImage from './assets/images/cozy_bedtime_farm_1781463254008.jpg';
 
 declare global {
@@ -160,6 +159,10 @@ const FIREFLIES_DATA = Array.from({ length: 18 }).map((_, i) => {
 });
 
 const SAMPLE_AUDIO_SRC = '/audio/sample-story.wav';
+const DEV_TEST_DATA = import.meta.env.DEV;
+const REQUIRED_STORY_CHOICES = 5;
+const CURRENT_YEAR = new Date().getFullYear();
+const BIRTH_YEAR_OPTIONS = Array.from({ length: 21 }, (_, index) => String(CURRENT_YEAR - index));
 
 export default function App() {
   // Navigation active tab for highlighting
@@ -170,7 +173,7 @@ export default function App() {
   const [checkoutCancelled, setCheckoutCancelled] = useState(false);
 
   // Form State
-  const [parentEmail, setParentEmail] = useState('');
+  const [parentEmail, setParentEmail] = useState(DEV_TEST_DATA ? 'parent.test@example.com' : '');
   const [childNames, setChildNames] = useState('');
 
   // Custom Kid Management (supports up to 5 children dynamically)
@@ -181,7 +184,9 @@ export default function App() {
     gender: 'female' | 'male' | 'other' | '';
     birthday: string;
   }>>([
-    { id: 'child-1', name: '', nickname: '', gender: '', birthday: '' }
+    DEV_TEST_DATA
+      ? { id: 'child-1', name: 'Niki', nickname: 'Niki', gender: 'female', birthday: '2021' }
+      : { id: 'child-1', name: '', nickname: '', gender: '', birthday: '' }
   ]);
 
   const handleAddChild = () => {
@@ -218,9 +223,9 @@ export default function App() {
     setChildNames(formatted);
   }, [childrenList]);
 
-  const [ageRange, setAgeRange] = useState<'3-5' | '6-8' | ''>('');
-  const [deliveryTime, setDeliveryTime] = useState('');
-  const [timezone, setTimezone] = useState('');
+  const [ageRange] = useState<'3-5' | '6-8'>('3-5');
+  const [deliveryTime, setDeliveryTime] = useState(DEV_TEST_DATA ? '19:30' : '');
+  const [timezone, setTimezone] = useState(DEV_TEST_DATA ? 'America/New_York' : '');
   
   const [selectedTheme, setSelectedTheme] = useState('adventure');
   const [customTheme, setCustomTheme] = useState('');
@@ -237,19 +242,21 @@ export default function App() {
   const [config, setConfig] = useState<any>({});
 
   const [sampleAudioMissing, setSampleAudioMissing] = useState(false);
+  const sampleAudioRef = useRef<HTMLAudioElement>(null);
 
   // FAQ states
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
 
   // New Popup and Custom Tag States
   const [showSignupModal, setShowSignupModal] = useState(false);
-  const [selectedAnimals, setSelectedAnimals] = useState<string[]>([]);
+  const [selectedAnimals, setSelectedAnimals] = useState<string[]>(DEV_TEST_DATA ? ['elephant', 'rabbit'] : []);
   const [customAnimalInput, setCustomAnimalInput] = useState('');
-  const [selectedHobbies, setSelectedHobbies] = useState<string[]>([]);
+  const [selectedHobbies, setSelectedHobbies] = useState<string[]>(DEV_TEST_DATA ? ['reading', 'drawing'] : []);
   const [customHobbyInput, setCustomHobbyInput] = useState('');
-  const [selectedThemes, setSelectedThemes] = useState<string[]>([]);
+  const [selectedThemes, setSelectedThemes] = useState<string[]>(DEV_TEST_DATA ? ['adventure', 'nature'] : []);
   const [customThemeInput, setCustomThemeInput] = useState('');
   const [builderStep, setBuilderStep] = useState(0);
+  const [registrationPlan, setRegistrationPlan] = useState<'free_trial' | 'monthly'>('free_trial');
 
   // Predefined options
   const themeOptions = ['adventure', 'kindness', 'friendship', 'animals', 'magic', 'nature', 'space', 'technology'];
@@ -271,8 +278,8 @@ export default function App() {
       a: "Children aged 3-8 have active imaginations and highly benefit from auditory storytelling to support language acquisition, vocabulary, and visualization skills. The vocabulary, story complexity, and soothing pace are optimized exactly for these pediatric categories."
     },
     {
-      q: "Why do you ask for my child's birthday?",
-      a: "We use your child's birthday to create stories with suitable vocabulary, length, and story complexity."
+      q: "Why do you ask for my child's birth year?",
+      a: "We use your child's birth year to create stories with suitable vocabulary, length, and story complexity."
     },
     {
       q: "Can I change my child's storytelling preferences later?",
@@ -312,6 +319,22 @@ export default function App() {
       el.scrollIntoView({ behavior: 'smooth' });
       setActiveTab(id);
     }
+  };
+
+  const openStoryBuilder = (plan: 'free_trial' | 'monthly') => {
+    setRegistrationPlan(plan);
+    setSignupMessage(null);
+    scrollTo('story-builder');
+  };
+
+  const playSampleAudio = () => {
+    const audio = sampleAudioRef.current;
+    if (audio) {
+      void audio.play().catch(() => {
+        // The native player remains available if the browser blocks playback.
+      });
+    }
+    scrollTo('sample-audio');
   };
 
   useEffect(() => {
@@ -354,7 +377,10 @@ export default function App() {
     const next = value.trim();
     if (!next) return;
 
-    if (!selected.some(item => item.toLocaleLowerCase() === next.toLocaleLowerCase())) {
+    if (
+      selected.length < REQUIRED_STORY_CHOICES &&
+      !selected.some(item => item.toLocaleLowerCase() === next.toLocaleLowerCase())
+    ) {
       setSelected(previous => [...previous, next]);
     }
     clearInput('');
@@ -367,16 +393,26 @@ export default function App() {
     'Bedtime',
     'Inbox'
   ];
-  const hasAnimal = selectedAnimals.length >= 2;
-  const hasTheme = selectedThemes.length >= 2;
-  const hasHobby = selectedHobbies.length >= 2;
+  const builderStages = [
+    { label: 'Story Favorites', steps: [0, 1, 2] },
+    { label: 'Child & Bedtime', steps: [3, 4] },
+    { label: 'Parent Contact', steps: [5] }
+  ];
+  const currentStageIndex = builderStages.findIndex(stage => stage.steps.includes(builderStep));
+  const currentStage = builderStages[currentStageIndex];
+  const currentSubstep = currentStage.steps.indexOf(builderStep) + 1;
+  const hasAnimal = selectedAnimals.length === REQUIRED_STORY_CHOICES;
+  const hasTheme = selectedThemes.length === REQUIRED_STORY_CHOICES;
+  const hasHobby = selectedHobbies.length === REQUIRED_STORY_CHOICES;
+  const hasMaxAnimals = selectedAnimals.length >= REQUIRED_STORY_CHOICES;
+  const hasMaxThemes = selectedThemes.length >= REQUIRED_STORY_CHOICES;
+  const hasMaxHobbies = selectedHobbies.length >= REQUIRED_STORY_CHOICES;
   const childrenComplete = childrenList.length > 0 && childrenList.every(child =>
     child.nickname.trim() && child.gender && child.birthday
   );
   const deliveryTimeComplete = /^([01]\d|2[0-3]):[0-5]\d$/.test(deliveryTime);
-  const ageRangeComplete = ageRange === '3-5' || ageRange === '6-8';
   const timezoneComplete = Boolean(timezone);
-  const deliveryComplete = deliveryTimeComplete && timezoneComplete && ageRangeComplete;
+  const deliveryComplete = deliveryTimeComplete && timezoneComplete;
   const emailComplete = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim()) && parentEmail.trim().length <= 254;
   const builderCompletion = [hasAnimal, hasTheme, hasHobby, childrenComplete, deliveryComplete, emailComplete];
   const canRegister = builderCompletion.every(Boolean);
@@ -398,7 +434,10 @@ export default function App() {
   };
 
   // Submit subscription request
-  const handleSubscribe = async (e?: React.FormEvent) => {
+  const handleSubscribe = async (
+    e?: React.FormEvent,
+    requestedPlan: 'free_trial' | 'monthly' = registrationPlan
+  ) => {
     e?.preventDefault();
     if (!parentEmail) {
       setSignupMessage({ type: 'error', text: 'Please fill in your parent email.' });
@@ -438,7 +477,7 @@ export default function App() {
         return;
       }
       if (!child.birthday) {
-        setSignupMessage({ type: 'error', text: `Please select a Birthday for Child #${i + 1}.` });
+        setSignupMessage({ type: 'error', text: `Please select a Birth Year for Child #${i + 1}.` });
         return;
       }
     }
@@ -465,8 +504,8 @@ export default function App() {
           preferred_theme: finalTheme,
           favorite_hobby: finalHobby,
           favorite_animal: finalAnimal,
-          plan_type: 'free_trial',
-          register_only: true,
+          plan_type: requestedPlan,
+          register_only: requestedPlan === 'free_trial',
           turnstile_token: turnstileToken
         })
       });
@@ -483,8 +522,14 @@ export default function App() {
         } else if (data.registered) {
           setSignupMessage({
             type: 'success',
-            text: 'Your free story request was saved. You will receive one personalized story tomorrow at your selected time.'
+            text: requestedPlan === 'monthly'
+              ? 'Your monthly plan request was saved. We will contact you by email with the next steps.'
+              : 'Your free story request was saved. You will receive one personalized story tomorrow at your selected time.'
           });
+          if (requestedPlan === 'monthly') {
+            setBuilderStep(builderSteps.length - 1);
+            scrollTo('story-builder');
+          }
         } else {
           setSignupMessage({
             type: 'error',
@@ -505,6 +550,19 @@ export default function App() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleMonthlyPlanRequest = () => {
+    setRegistrationPlan('monthly');
+    setSignupMessage(null);
+
+    if (canSubmitRegistration) {
+      void handleSubscribe(undefined, 'monthly');
+      return;
+    }
+
+    continueBuilder();
+    scrollTo('story-builder');
   };
   return (
     <div className="min-h-screen bg-twilight-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-black relative">
@@ -735,7 +793,7 @@ export default function App() {
             </button>
 
             <button 
-              onClick={() => scrollTo('story-builder')}
+              onClick={() => openStoryBuilder('free_trial')}
               className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === 'story-builder' ? 'text-amber-400' : ''}`}
             >
               Build Plan
@@ -758,7 +816,7 @@ export default function App() {
           <div>
             <button 
               onClick={() => {
-                scrollTo('story-builder');
+                openStoryBuilder('free_trial');
               }}
               className="px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 bg-amber-300 rounded-full hover:bg-amber-200 hover:shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all cursor-pointer font-bold"
             >
@@ -794,7 +852,7 @@ export default function App() {
             <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-4">
               <button 
                 onClick={() => {
-                  scrollTo('story-builder');
+                  openStoryBuilder('free_trial');
                 }}
                 className="px-8 py-4 rounded-xl text-slate-950 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
@@ -802,7 +860,7 @@ export default function App() {
                 Create My Story Plan
               </button>
               <button
-                onClick={() => scrollTo('sample-audio')}
+                onClick={playSampleAudio}
                 className="px-8 py-4 rounded-xl text-slate-100 border border-indigo-300/30 bg-slate-950/40 hover:bg-slate-900/70 hover:border-indigo-300/60 font-bold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 <Volume2 className="w-4 h-4" />
@@ -921,7 +979,7 @@ export default function App() {
 
         <div className="mt-10 flex justify-center">
           <button
-            onClick={() => scrollTo('sample-audio')}
+            onClick={playSampleAudio}
             className="px-6 py-3 rounded-xl border border-indigo-300/30 bg-slate-950/40 text-slate-100 hover:border-amber-300/50 hover:text-amber-200 transition-all text-sm font-bold"
           >
             Hear the Sample Voice
@@ -964,6 +1022,7 @@ export default function App() {
             </div>
 
             <audio
+              ref={sampleAudioRef}
               controls
               controlsList="nodownload"
               onContextMenu={(event) => event.preventDefault()}
@@ -1057,7 +1116,7 @@ export default function App() {
         </div>
         <div className="mt-12 flex justify-center">
           <button
-            onClick={() => scrollTo('story-builder')}
+            onClick={() => openStoryBuilder('free_trial')}
             className="px-7 py-3.5 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_22px_rgba(245,158,11,0.18)] transition-all flex items-center justify-center gap-2 text-sm"
           >
             Build My Child's Story Plan
@@ -1069,22 +1128,36 @@ export default function App() {
 
 
       {/* STORY PLAN BUILDER */}
-      <section id="story-builder" data-scroll-reveal className="scroll-reveal reveal-from-left py-20 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-6 md:px-12 relative">
-        <div className="text-center space-y-4 max-w-2xl mx-auto mb-12">
-          <span className="text-xs uppercase font-bold tracking-widest text-amber-300 font-mono">Free Story Preview</span>
-          <h2 className="text-4xl sm:text-5xl font-kids tracking-wide text-white">Create Your Free Story</h2>
+      <section id="story-builder" data-scroll-reveal className="scroll-reveal reveal-from-left py-14 bg-transparent border-t border-[#1d265a] mx-auto max-w-5xl px-4 md:px-10 relative">
+        <div className="text-center space-y-3 max-w-2xl mx-auto mb-8">
+          <span className="text-xs uppercase font-bold tracking-widest text-amber-300 font-mono">
+            {registrationPlan === 'monthly' ? 'Monthly Story Plan' : 'Free Story Preview'}
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-kids tracking-wide text-white">
+            {registrationPlan === 'monthly' ? 'Create Your Monthly Plan' : 'Create Your Free Story'}
+          </h2>
           <p className="text-slate-300 text-sm sm:text-base font-light leading-relaxed">
-            Choose the story details now, and receive one personalized audio story tomorrow at your selected time. No payment required.
+            {registrationPlan === 'monthly'
+              ? 'Choose the details for 30 personalized bedtime stories. Your request will be saved for manual confirmation.'
+              : 'Choose the story details now, and receive one personalized audio story tomorrow at your selected time. No payment required.'}
           </p>
         </div>
 
-        <div className="max-w-2xl mx-auto reveal-stagger">
-          <div className="rounded-3xl border border-indigo-500/30 bg-[#090d2a]/80 p-4 sm:p-6 shadow-[0_18px_45px_rgba(15,23,42,0.35)]">
-            <div className="mb-5 rounded-2xl border border-[#26306a] bg-[#050814]/70 px-4 py-3">
+        <div className="max-w-xl mx-auto reveal-stagger">
+          <div className="rounded-2xl border border-indigo-500/30 bg-[#090d2a]/80 p-2.5 sm:p-3 shadow-[0_18px_45px_rgba(15,23,42,0.35)]">
+            <div className="mb-2.5 rounded-2xl border border-[#26306a] bg-[#050814]/70 px-3 py-2">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[10px] uppercase tracking-widest text-amber-300 font-bold font-mono">
-                  Step {builderStep + 1} of {builderSteps.length}
-                </span>
+                <div>
+                  <span className="block text-[10px] uppercase tracking-widest text-amber-300 font-bold font-mono">
+                    Step {currentStageIndex + 1} of {builderStages.length}
+                  </span>
+                  <span className="block mt-0.5 text-xs font-semibold text-slate-300">
+                    {currentStage.label}
+                    {currentStage.steps.length > 1 && (
+                      <span className="font-normal text-slate-500"> · Part {currentSubstep} of {currentStage.steps.length}</span>
+                    )}
+                  </span>
+                </div>
                 {builderStep > 0 && (
                   <button
                     type="button"
@@ -1095,8 +1168,18 @@ export default function App() {
                   </button>
                 )}
               </div>
+              <div className="mt-2 grid grid-cols-3 gap-2" aria-label={`Step ${currentStageIndex + 1} of ${builderStages.length}`}>
+                {builderStages.map((stage, index) => (
+                  <div
+                    key={stage.label}
+                    className={`h-1 rounded-full transition-colors ${
+                      index <= currentStageIndex ? 'bg-amber-300' : 'bg-[#1b214c]'
+                    }`}
+                  />
+                ))}
+              </div>
               {(selectedAnimals.length > 0 || selectedThemes.length > 0 || selectedHobbies.length > 0 || childrenList.some(child => child.nickname.trim())) && (
-                <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
                   Your plan so far:{' '}
                   <span className="text-slate-200">
                     {[
@@ -1138,28 +1221,36 @@ export default function App() {
               })}
             </div>
 
-            <div className="rounded-2xl border border-[#232a5e]/70 bg-[#050814]/80 p-4 sm:p-6 text-left min-h-[25rem]">
+            <div className="rounded-2xl border border-[#232a5e]/70 bg-[#050814]/80 p-3 sm:p-4 text-left min-h-0">
               {builderStep === 0 && (
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <div>
-                    <h3 className="text-2xl font-kids tracking-wide text-white">Pick a gentle story friend</h3>
-                    <p className="text-sm text-slate-400 mt-1">Choose at least 2 animal companions your child would love to meet at bedtime.</p>
+                    <h3 className="text-lg sm:text-xl font-kids tracking-wide text-white">Pick a gentle story friend</h3>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-0.5">Choose exactly 5 animal companions your child would love to meet at bedtime.</p>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
                     {builderAnimalOptions.map((animal) => {
                       const selected = selectedAnimals.includes(animal);
+                      const disabled = !selected && hasMaxAnimals;
                       return (
                         <button
                           key={animal}
                           type="button"
+                          disabled={disabled}
                           onClick={() => {
                             setSelectedAnimals(prev =>
-                              selected ? prev.filter(item => item !== animal) : [...prev, animal]
+                              selected
+                                ? prev.filter(item => item !== animal)
+                                : prev.length < REQUIRED_STORY_CHOICES
+                                ? [...prev, animal]
+                                : prev
                             );
                           }}
-                          className={`min-h-12 rounded-xl border px-3 text-sm font-semibold transition-all ${
+                          className={`min-h-8 rounded-xl border px-2 text-sm font-semibold transition-all ${
                             selected
                               ? 'border-amber-300 bg-amber-300/15 text-amber-100'
+                              : disabled
+                              ? 'border-[#171b3f] bg-[#050915]/40 text-slate-600 cursor-not-allowed'
                               : 'border-[#26306a] bg-[#080d25] text-slate-300 hover:border-amber-300/50'
                           }`}
                         >
@@ -1168,7 +1259,7 @@ export default function App() {
                       );
                     })}
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row gap-1.5">
                     <input
                       type="text"
                       value={customAnimalInput}
@@ -1180,24 +1271,29 @@ export default function App() {
                         }
                       }}
                       placeholder="Other animal"
-                      className="flex-1 px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                      disabled={hasMaxAnimals}
+                      className="flex-1 px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
                     />
                     <button
                       type="button"
+                      disabled={hasMaxAnimals}
                       onClick={() => addCustomChoice(customAnimalInput, selectedAnimals, setSelectedAnimals, setCustomAnimalInput)}
-                      className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white"
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white disabled:text-slate-600 disabled:cursor-not-allowed"
                     >
                       Add
                     </button>
                   </div>
+                  <p className="text-[11px] text-slate-500">
+                    {selectedAnimals.length}/{REQUIRED_STORY_CHOICES} selected
+                  </p>
                   {selectedAnimals.filter(animal => !builderAnimalOptions.includes(animal)).length > 0 && (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {selectedAnimals.filter(animal => !builderAnimalOptions.includes(animal)).map(animal => (
                         <button
                           key={animal}
                           type="button"
                           onClick={() => setSelectedAnimals(previous => previous.filter(item => item !== animal))}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-300/10 px-2.5 py-0.5 text-xs font-semibold text-amber-100"
                           title={`Remove ${animal}`}
                         >
                           {animal}<X className="h-3.5 w-3.5" />
@@ -1209,34 +1305,42 @@ export default function App() {
                     type="button"
                     disabled={!hasAnimal}
                     onClick={() => goToBuilderStep(1)}
-                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                    className="w-full sm:w-auto px-4 py-1.5 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
                   >
-                    {hasAnimal ? 'Choose the Story World' : `Choose ${Math.max(0, 2 - selectedAnimals.length)} More`}
+                    {hasAnimal ? 'Choose the Story World' : `Choose ${Math.max(0, REQUIRED_STORY_CHOICES - selectedAnimals.length)} More`}
                   </button>
                 </div>
               )}
 
               {builderStep === 1 && (
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <div>
-                    <h3 className="text-2xl font-kids tracking-wide text-white">Choose tonight's cozy world</h3>
-                    <p className="text-sm text-slate-400 mt-1">Pick at least 2 cozy worlds where your child's sleepy adventures can begin.</p>
+                    <h3 className="text-lg sm:text-xl font-kids tracking-wide text-white">Choose tonight's cozy world</h3>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-0.5">Choose exactly 5 cozy worlds where your child's sleepy adventures can begin.</p>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
                     {builderThemeOptions.map((theme) => {
                       const selected = selectedThemes.includes(theme);
+                      const disabled = !selected && hasMaxThemes;
                       return (
                         <button
                           key={theme}
                           type="button"
+                          disabled={disabled}
                           onClick={() => {
                             setSelectedThemes(prev =>
-                              selected ? prev.filter(item => item !== theme) : [...prev, theme]
+                              selected
+                                ? prev.filter(item => item !== theme)
+                                : prev.length < REQUIRED_STORY_CHOICES
+                                ? [...prev, theme]
+                                : prev
                             );
                           }}
-                          className={`min-h-12 rounded-xl border px-3 text-sm font-semibold transition-all ${
+                          className={`min-h-8 rounded-xl border px-2 text-sm font-semibold transition-all ${
                             selected
                               ? 'border-indigo-300 bg-indigo-400/15 text-indigo-100'
+                              : disabled
+                              ? 'border-[#171b3f] bg-[#050915]/40 text-slate-600 cursor-not-allowed'
                               : 'border-[#26306a] bg-[#080d25] text-slate-300 hover:border-indigo-300/50'
                           }`}
                         >
@@ -1245,7 +1349,7 @@ export default function App() {
                       );
                     })}
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row gap-1.5">
                     <input
                       type="text"
                       value={customThemeInput}
@@ -1257,24 +1361,29 @@ export default function App() {
                         }
                       }}
                       placeholder="Other theme"
-                      className="flex-1 px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                      disabled={hasMaxThemes}
+                      className="flex-1 px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
                     />
                     <button
                       type="button"
+                      disabled={hasMaxThemes}
                       onClick={() => addCustomChoice(customThemeInput, selectedThemes, setSelectedThemes, setCustomThemeInput)}
-                      className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white"
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white disabled:text-slate-600 disabled:cursor-not-allowed"
                     >
                       Add
                     </button>
                   </div>
+                  <p className="text-[11px] text-slate-500">
+                    {selectedThemes.length}/{REQUIRED_STORY_CHOICES} selected
+                  </p>
                   {selectedThemes.filter(theme => !builderThemeOptions.includes(theme)).length > 0 && (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {selectedThemes.filter(theme => !builderThemeOptions.includes(theme)).map(theme => (
                         <button
                           key={theme}
                           type="button"
                           onClick={() => setSelectedThemes(previous => previous.filter(item => item !== theme))}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-indigo-300/50 bg-indigo-300/10 px-3 py-1.5 text-xs font-semibold text-indigo-100"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-indigo-300/50 bg-indigo-300/10 px-2.5 py-0.5 text-xs font-semibold text-indigo-100"
                           title={`Remove ${theme}`}
                         >
                           {theme}<X className="h-3.5 w-3.5" />
@@ -1286,34 +1395,42 @@ export default function App() {
                     type="button"
                     disabled={!hasTheme}
                     onClick={() => goToBuilderStep(2)}
-                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                    className="w-full sm:w-auto px-4 py-1.5 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
                   >
-                    {hasTheme ? 'Add Their Favorite Joy' : `Choose ${Math.max(0, 2 - selectedThemes.length)} More`}
+                    {hasTheme ? 'Add Their Favorite Joy' : `Choose ${Math.max(0, REQUIRED_STORY_CHOICES - selectedThemes.length)} More`}
                   </button>
                 </div>
               )}
 
               {builderStep === 2 && (
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <div>
-                    <h3 className="text-2xl font-kids tracking-wide text-white">What little joy should appear in the story?</h3>
-                    <p className="text-sm text-slate-400 mt-1">Choose at least 2 things your child enjoys, so the stories have more room to vary.</p>
+                    <h3 className="text-lg sm:text-xl font-kids tracking-wide text-white">What little joy should appear in the story?</h3>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-0.5">Choose exactly 5 things your child enjoys, so the stories have more room to vary.</p>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
                     {builderHobbyOptions.map((hobby) => {
                       const selected = selectedHobbies.includes(hobby);
+                      const disabled = !selected && hasMaxHobbies;
                       return (
                         <button
                           key={hobby}
                           type="button"
+                          disabled={disabled}
                           onClick={() => {
                             setSelectedHobbies(prev =>
-                              selected ? prev.filter(item => item !== hobby) : [...prev, hobby]
+                              selected
+                                ? prev.filter(item => item !== hobby)
+                                : prev.length < REQUIRED_STORY_CHOICES
+                                ? [...prev, hobby]
+                                : prev
                             );
                           }}
-                          className={`min-h-12 rounded-xl border px-3 text-sm font-semibold transition-all ${
+                          className={`min-h-8 rounded-xl border px-2 text-sm font-semibold transition-all ${
                             selected
                               ? 'border-emerald-300 bg-emerald-400/15 text-emerald-100'
+                              : disabled
+                              ? 'border-[#171b3f] bg-[#050915]/40 text-slate-600 cursor-not-allowed'
                               : 'border-[#26306a] bg-[#080d25] text-slate-300 hover:border-emerald-300/50'
                           }`}
                         >
@@ -1322,7 +1439,7 @@ export default function App() {
                       );
                     })}
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row gap-1.5">
                     <input
                       type="text"
                       value={customHobbyInput}
@@ -1330,28 +1447,35 @@ export default function App() {
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') {
                           event.preventDefault();
-                          addCustomChoice(customHobbyInput, selectedHobbies, setSelectedHobbies, setCustomHobbyInput);
+                          if (!hasMaxHobbies) {
+                            addCustomChoice(customHobbyInput, selectedHobbies, setSelectedHobbies, setCustomHobbyInput);
+                          }
                         }
                       }}
                       placeholder="Other hobby"
-                      className="flex-1 px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                      disabled={hasMaxHobbies}
+                      className="flex-1 px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
                     />
                     <button
                       type="button"
+                      disabled={hasMaxHobbies}
                       onClick={() => addCustomChoice(customHobbyInput, selectedHobbies, setSelectedHobbies, setCustomHobbyInput)}
-                      className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white"
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-slate-200 hover:text-white disabled:text-slate-600 disabled:cursor-not-allowed"
                     >
                       Add
                     </button>
                   </div>
+                  <p className="text-[11px] text-slate-500">
+                    {selectedHobbies.length}/{REQUIRED_STORY_CHOICES} selected
+                  </p>
                   {selectedHobbies.filter(hobby => !builderHobbyOptions.includes(hobby)).length > 0 && (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {selectedHobbies.filter(hobby => !builderHobbyOptions.includes(hobby)).map(hobby => (
                         <button
                           key={hobby}
                           type="button"
                           onClick={() => setSelectedHobbies(previous => previous.filter(item => item !== hobby))}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/50 bg-emerald-300/10 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/50 bg-emerald-300/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-100"
                           title={`Remove ${hobby}`}
                         >
                           {hobby}<X className="h-3.5 w-3.5" />
@@ -1363,32 +1487,32 @@ export default function App() {
                     type="button"
                     disabled={!hasHobby}
                     onClick={() => goToBuilderStep(3)}
-                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                    className="w-full sm:w-auto px-4 py-1.5 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
                   >
-                    {hasHobby ? 'Tell Us About Your Child' : `Choose ${Math.max(0, 2 - selectedHobbies.length)} More`}
+                    {hasHobby ? 'Tell Us About Your Child' : `Choose ${Math.max(0, REQUIRED_STORY_CHOICES - selectedHobbies.length)} More`}
                   </button>
                 </div>
               )}
 
               {builderStep === 3 && (
-                <div className="space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
-                      <h3 className="text-2xl font-kids tracking-wide text-white">Tell us about the little dreamer</h3>
-                      <p className="text-sm text-slate-400 mt-1">Add at least 1 complete child profile so we can shape a child-friendly story voice.</p>
+                      <h3 className="text-lg sm:text-xl font-kids tracking-wide text-white">Tell us about the little dreamer</h3>
+                      <p className="text-xs sm:text-sm text-slate-400 mt-0.5">Add at least 1 complete child profile so we can shape a child-friendly story voice.</p>
                     </div>
                     <button
                       type="button"
                       disabled={childrenList.length >= 5}
                       onClick={handleAddChild}
-                      className="px-4 py-2.5 rounded-xl bg-amber-300/10 border border-amber-300/40 text-amber-200 disabled:opacity-40 text-xs font-bold uppercase"
+                      className="px-3 py-1 rounded-xl bg-amber-300/10 border border-amber-300/40 text-amber-200 disabled:opacity-40 text-xs font-bold uppercase"
                     >
                       Add Child
                     </button>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {childrenList.map((child, index) => (
-                      <div key={child.id} className="rounded-2xl border border-[#232a5e] bg-[#080d25] p-4 space-y-3">
+                      <div key={child.id} className="rounded-2xl border border-[#232a5e] bg-[#080d25] p-2.5 space-y-2">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-xs font-bold uppercase tracking-widest text-indigo-300">Child {index + 1}</span>
                           {childrenList.length > 1 && (
@@ -1402,20 +1526,29 @@ export default function App() {
                           value={child.nickname}
                           onChange={(event) => handleUpdateChild(child.id, 'nickname', event.target.value)}
                           placeholder="Child name or nickname"
-                          className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                          className="w-full px-2.5 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
                         />
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <select
                             value={child.gender}
                             onChange={(event) => handleUpdateChild(child.id, 'gender', event.target.value)}
-                            className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                            className="w-full px-2.5 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
                           >
                             <option value="">Gender</option>
                             <option value="female">Female / Girl</option>
                             <option value="male">Male / Boy</option>
                             <option value="other">Other / Non-binary</option>
                           </select>
-                          <DatePicker value={child.birthday} onChange={(value) => handleUpdateChild(child.id, 'birthday', value)} />
+                          <select
+                            value={child.birthday}
+                            onChange={(event) => handleUpdateChild(child.id, 'birthday', event.target.value)}
+                            className="w-full px-2.5 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                          >
+                            <option value="">Birth year</option>
+                            {BIRTH_YEAR_OPTIONS.map((year) => (
+                              <option key={year} value={year}>{year}</option>
+                            ))}
+                          </select>
                         </div>
                       </div>
                     ))}
@@ -1424,7 +1557,7 @@ export default function App() {
                     type="button"
                     disabled={!childrenComplete}
                     onClick={() => goToBuilderStep(4)}
-                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                    className="w-full sm:w-auto px-4 py-1.5 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
                   >
                     {childrenComplete ? 'Choose Bedtime Delivery' : 'Complete 1 Child Profile'}
                   </button>
@@ -1432,12 +1565,12 @@ export default function App() {
               )}
 
               {builderStep === 4 && (
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <div>
-                    <h3 className="text-2xl font-kids tracking-wide text-white">Set the bedtime story hour</h3>
-                    <p className="text-sm text-slate-400 mt-1">Choose when the story should arrive in the parent's timezone.</p>
+                    <h3 className="text-lg sm:text-xl font-kids tracking-wide text-white">Set the bedtime story hour</h3>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-0.5">Choose when the story should arrive in the parent's timezone.</p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1.5">Delivery Time</label>
                       <input
@@ -1445,25 +1578,9 @@ export default function App() {
                         required
                         value={deliveryTime}
                         onChange={(event) => setDeliveryTime(event.target.value)}
-                        className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                        className="w-full px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
                       />
                       {!deliveryTimeComplete && (
-                        <p className="mt-1.5 text-[10px] text-amber-200">Required</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1.5">Age Range</label>
-                      <select
-                        required
-                        value={ageRange}
-                        onChange={(event) => setAgeRange(event.target.value as '3-5' | '6-8')}
-                        className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
-                      >
-                        <option value="" disabled>Select age range</option>
-                        <option value="3-5">3-5</option>
-                        <option value="6-8">6-8</option>
-                      </select>
-                      {!ageRangeComplete && (
                         <p className="mt-1.5 text-[10px] text-amber-200">Required</p>
                       )}
                     </div>
@@ -1473,7 +1590,7 @@ export default function App() {
                         required
                         value={timezone}
                         onChange={(event) => setTimezone(event.target.value)}
-                        className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
+                        className="w-full px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
                       >
                         <option value="" disabled>Select timezone</option>
                         {getTimezoneOptions(Intl.DateTimeFormat().resolvedOptions().timeZone).map((tz) => (
@@ -1487,14 +1604,14 @@ export default function App() {
                   </div>
                   {!deliveryComplete && (
                     <p className="text-xs text-amber-200/90">
-                      Delivery time, age range, and timezone are all required.
+                      Delivery time and timezone are required.
                     </p>
                   )}
                   <button
                     type="button"
                     disabled={!deliveryComplete}
                     onClick={() => goToBuilderStep(5)}
-                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
+                    className="w-full sm:w-auto px-4 py-1.5 rounded-xl bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-sm"
                   >
                     Add Your Email
                   </button>
@@ -1502,13 +1619,10 @@ export default function App() {
               )}
 
               {builderStep === 5 && (
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <div>
-                    <h3 className="text-2xl font-kids tracking-wide text-white">Where should the bedtime magic arrive?</h3>
-                    <p className="text-sm text-slate-400 mt-1">We send the story link to the parent, not a child-facing app.</p>
-                  </div>
-                  <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-xs sm:text-sm text-amber-100 leading-relaxed">
-                    Your free personalized story will be sent tomorrow at your selected time. No payment details are needed.
+                    <h3 className="text-lg sm:text-xl font-kids tracking-wide text-white">Where should the bedtime magic arrive?</h3>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-0.5">We send the story link to the parent, not a child-facing app.</p>
                   </div>
                   <input
                     type="email"
@@ -1516,7 +1630,7 @@ export default function App() {
                     value={parentEmail}
                     onChange={(event) => setParentEmail(event.target.value)}
                     placeholder="Parent email address"
-                    className="w-full px-3 py-3 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
+                    className="w-full px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
                   />
                   {parentEmail.trim() && !emailComplete && (
                     <p className="text-xs text-amber-200/90">
@@ -1531,24 +1645,38 @@ export default function App() {
                   {config.turnstileRequired && config.turnstileSiteKey && (
                     <TurnstileWidget siteKey={config.turnstileSiteKey} onToken={setTurnstileToken} />
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (canRegister) {
-                        handleSubscribe();
-                      } else {
-                        continueBuilder();
-                      }
-                    }}
-                    disabled={submitting || !canSubmitRegistration}
-                    className={`w-full py-3 rounded-xl font-bold text-sm uppercase tracking-wider transition-all ${
-                      canSubmitRegistration
-                        ? 'bg-amber-300 hover:bg-amber-200 text-slate-950'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {submitting ? 'Saving Free Story...' : canRegister ? 'Request My Free Story' : 'Complete Story Details'}
-                  </button>
+                  {!signupMessage || signupMessage.type !== 'success' ? (
+                    <div className="space-y-2.5">
+                      <p className="text-xs text-slate-400">Choose how you would like to begin:</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRegistrationPlan('free_trial');
+                            void handleSubscribe(undefined, 'free_trial');
+                          }}
+                          disabled={submitting || !canSubmitRegistration}
+                          className="w-full min-h-9 rounded-xl border border-emerald-300/50 bg-emerald-300/10 px-3.5 py-2 text-sm font-bold text-emerald-100 transition-colors hover:bg-emerald-300/20 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+                        >
+                          {submitting && registrationPlan === 'free_trial' ? 'Saving...' : 'Request Free Story'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRegistrationPlan('monthly');
+                            void handleSubscribe(undefined, 'monthly');
+                          }}
+                          disabled={submitting || !canSubmitRegistration}
+                          className="w-full min-h-9 rounded-xl bg-amber-300 px-3.5 py-2 text-sm font-bold text-slate-950 transition-colors hover:bg-amber-200 disabled:bg-slate-800 disabled:text-slate-500"
+                        >
+                          {submitting && registrationPlan === 'monthly' ? 'Saving...' : 'Request Monthly Plan - $9'}
+                        </button>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        The free option includes one story. The monthly plan includes 30 nightly stories.
+                      </p>
+                    </div>
+                  ) : null}
                   {signupMessage && (
                     <p className={`text-xs leading-relaxed ${
                       signupMessage.type === 'success' ? 'text-emerald-200' : 'text-rose-200'
@@ -1618,7 +1746,7 @@ export default function App() {
             </div>
             <button
               type="button"
-              onClick={() => scrollTo('story-builder')}
+              onClick={() => openStoryBuilder('free_trial')}
               className="w-full py-3 rounded-xl text-slate-950 bg-emerald-200 hover:bg-emerald-100 font-bold text-xs uppercase tracking-wider transition-colors"
             >
               Request My Free Story
@@ -1627,7 +1755,7 @@ export default function App() {
 
           <div className="p-7 rounded-3xl bg-gradient-to-br from-[#121b4a] to-[#0a113a] border border-indigo-400/40 flex flex-col justify-between gap-8 text-left relative overflow-hidden">
             <div className="absolute top-4 right-4 bg-amber-300/10 text-amber-200 border border-amber-300/30 text-[9px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full font-mono">
-              Coming Soon
+              Manual Confirmation
             </div>
 
             <div className="space-y-4">
@@ -1665,12 +1793,13 @@ export default function App() {
 
             <div>
               <button
-              type="button"
-              disabled
-              className="w-full py-3 rounded-xl text-slate-400 bg-slate-800/80 border border-slate-700 font-bold text-xs uppercase tracking-wider cursor-not-allowed text-center"
-            >
-              Not Available Yet
-            </button>
+                type="button"
+                onClick={handleMonthlyPlanRequest}
+                disabled={submitting}
+                className="w-full py-3 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 border border-amber-200 font-bold text-xs uppercase tracking-wider transition-colors text-center"
+              >
+                {submitting && registrationPlan === 'monthly' ? 'Saving Monthly Request...' : 'Request Monthly Plan'}
+              </button>
             </div>
           </div>
 
@@ -1719,23 +1848,39 @@ export default function App() {
       </main>
 
       {/* 9. THE FOOTER */}
-      <footer className="bg-slate-950 border-t border-[#111636]/40 py-16 relative z-25 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-5">
-            <div className="flex items-center gap-3 text-left">
+      <footer className="bg-slate-950 border-t border-[#111636]/40 py-12 relative z-25 overflow-hidden">
+        <div className="max-w-5xl mx-auto px-6 md:px-12">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-8">
+            <div className="flex items-start gap-3 text-left max-w-md">
               <img
                 src="/cozy-kid-tales-icon.svg"
                 alt="Cozy Kid Tales"
-                className="w-8 h-8 rounded-lg shadow-[0_0_12px_rgba(99,102,241,0.2)]"
+                className="w-10 h-10 rounded-lg shadow-[0_0_12px_rgba(99,102,241,0.2)]"
               />
               <div>
-                <span className="block text-sm font-bold text-slate-300">Cozy Kid Tales LLC (c) 2026</span>
-                <span className="block text-[10px] text-slate-500 font-mono">Global Bedtime Companion</span>
+                <span className="block text-sm font-bold text-slate-200">Cozy Kid Tales</span>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  Personalized, screen-free bedtime audio stories created for children ages 3-8.
+                </p>
               </div>
+            </div>
+
+            <div className="text-left sm:text-right">
+              <span className="block text-xs font-bold uppercase tracking-wider text-slate-400">Contact Us</span>
+              <a
+                href="mailto:support@cozykidtales.com"
+                className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-amber-300 hover:text-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded-sm transition-colors"
+              >
+                <Mail className="w-4 h-4" aria-hidden="true" />
+                support@cozykidtales.com
+              </a>
+              <span className="block mt-2 text-xs text-slate-500">Questions about registration or story delivery</span>
             </div>
           </div>
 
+          <div className="mt-8 pt-5 border-t border-[#171c40] text-xs text-slate-600">
+            &copy; 2026 Cozy Kid Tales LLC. All rights reserved.
+          </div>
         </div>
       </footer>
 
@@ -1826,7 +1971,7 @@ export default function App() {
                   </div>
                   <div className="p-4 rounded-xl bg-slate-900/60 border border-indigo-950 text-xs text-slate-400 space-y-1 inline-block mx-auto">
                     <span className="block text-slate-300 font-semibold">Configured Preferences:</span>
-                    <span>Age Level: {ageRange} - Daily at {deliveryTime} ({getTzAbbreviation(timezone)})</span>
+                    <span>Daily at {deliveryTime} ({getTzAbbreviation(timezone)})</span>
                     <span className="block italic text-amber-200/90 text-[11.5px] mt-1.5">Check your email inbox, details received.</span>
                   </div>
                   <button 
@@ -1873,7 +2018,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1.5">
                       <div>
                         <label className="block text-[10px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Bedtime Hour</label>
                         <div className="relative">
@@ -1902,29 +2047,6 @@ export default function App() {
                               </option>
                             ))}
                           </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Reading Level Mode *</label>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          {[
-                            { label: '3-5', val: '3-5' },
-                            { label: '6-8', val: '6-8' }
-                          ].map((item, id) => (
-                            <button
-                              key={id}
-                              type="button"
-                              onClick={() => setAgeRange(item.val as any)}
-                              className={`py-2 px-1 text-center border rounded-xl text-[10px] font-bold transition-all ${
-                                ageRange === item.val
-                                  ? 'border-amber-400 bg-amber-500/10 text-amber-200'
-                                  : 'border-[#212752] bg-[#05060c] text-slate-400 hover:border-slate-700'
-                              }`}
-                            >
-                              {item.label}
-                            </button>
-                          ))}
                         </div>
                       </div>
                     </div>
@@ -2003,11 +2125,20 @@ export default function App() {
                             </div>
 
                             <div>
-                              <label className="block text-[9px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Birthday *</label>
-                              <DatePicker
+                              <label className="block text-[9px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Birth Year *</label>
+                              <select
+                                required
                                 value={child.birthday}
-                                onChange={(val) => handleUpdateChild(child.id, 'birthday', val)}
-                              />
+                                onChange={(event) => handleUpdateChild(child.id, 'birthday', event.target.value)}
+                                className="w-full px-3 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-xs text-slate-100 focus:outline-[#312e81] focus:border-indigo-400 transition-colors cursor-pointer"
+                              >
+                                <option value="" disabled className="bg-[#05060d] text-slate-500">Select Birth Year *</option>
+                                {BIRTH_YEAR_OPTIONS.map((year) => (
+                                  <option key={year} value={year} className="bg-[#05060d] text-slate-100">
+                                    {year}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
                           </div>
                         </div>
@@ -2029,20 +2160,24 @@ export default function App() {
                     <div className="flex flex-wrap gap-2 py-0.5">
                       {['Elephant', 'Rabbit', 'Dolphin', 'Lion', 'Bear', 'Panda', 'Koala'].map((tag) => {
                         const isChosen = selectedAnimals.includes(tag);
+                        const disabled = !isChosen && hasMaxAnimals;
                         return (
                           <button
                             key={tag}
                             type="button"
+                            disabled={disabled}
                             onClick={() => {
                               if (isChosen) {
                                 setSelectedAnimals(prev => prev.filter(p => p !== tag));
-                              } else {
+                              } else if (!hasMaxAnimals) {
                                 setSelectedAnimals(prev => [...prev, tag]);
                               }
                             }}
                             className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-all cursor-pointer ${
                               isChosen 
                                 ? 'bg-amber-400/10 text-amber-300 border border-[#facc15]/40 shadow-[0_0_8px_rgba(250,204,21,0.08)]' 
+                                : disabled
+                                ? 'bg-[#05060d] text-slate-600 border border-[#171b3f] cursor-not-allowed'
                                 : 'bg-[#05060d] text-slate-400 border border-[#212752]/50 hover:border-slate-700'
                             }`}
                           >
@@ -2058,21 +2193,24 @@ export default function App() {
                         value={customAnimalInput}
                         onChange={(e) => setCustomAnimalInput(e.target.value)}
                         placeholder="Type custom fluffy or wild animal... (e.g. Squirrel)"
+                        disabled={hasMaxAnimals}
                         className="flex-1 px-3 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-400 placeholder:text-slate-700 font-light"
                       />
                       <button
                         type="button"
+                        disabled={hasMaxAnimals}
                         onClick={() => {
-                          if (customAnimalInput.trim() && !selectedAnimals.includes(customAnimalInput.trim())) {
+                          if (!hasMaxAnimals && customAnimalInput.trim() && !selectedAnimals.includes(customAnimalInput.trim())) {
                             setSelectedAnimals(prev => [...prev, customAnimalInput.trim()]);
                             setCustomAnimalInput('');
                           }
                         }}
-                        className="px-4 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl text-xs text-slate-300 font-semibold cursor-pointer transition-colors"
+                        className="px-4 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl text-xs text-slate-300 font-semibold cursor-pointer transition-colors disabled:text-slate-600 disabled:cursor-not-allowed"
                       >
                         Add Tag
                       </button>
                     </div>
+                    <p className="text-[10px] text-slate-500">{selectedAnimals.length}/{REQUIRED_STORY_CHOICES} animals selected</p>
                   </div>
 
                   {/* Section C: Favorite Hobbies choice cloud */}
@@ -2088,20 +2226,24 @@ export default function App() {
                     <div className="flex flex-wrap gap-2 py-0.5">
                       {['Reading', 'Drawing', 'Puzzles', 'Star Gazing', 'Singing', 'Building block play'].map((tag) => {
                         const isChosen = selectedHobbies.includes(tag);
+                        const disabled = !isChosen && hasMaxHobbies;
                         return (
                           <button
                             key={tag}
                             type="button"
+                            disabled={disabled}
                             onClick={() => {
                               if (isChosen) {
                                 setSelectedHobbies(prev => prev.filter(p => p !== tag));
-                              } else {
+                              } else if (!hasMaxHobbies) {
                                 setSelectedHobbies(prev => [...prev, tag]);
                               }
                             }}
                             className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-all cursor-pointer ${
                               isChosen 
                                 ? 'bg-amber-400/10 text-amber-300 border border-[#facc15]/40 shadow-[0_0_8px_rgba(250,204,21,0.08)]' 
+                                : disabled
+                                ? 'bg-[#05060d] text-slate-600 border border-[#171b3f] cursor-not-allowed'
                                 : 'bg-[#05060d] text-slate-400 border border-[#212752]/50 hover:border-slate-700'
                             }`}
                           >
@@ -2117,21 +2259,24 @@ export default function App() {
                         value={customHobbyInput}
                         onChange={(e) => setCustomHobbyInput(e.target.value)}
                         placeholder="Type custom creative hobby... (e.g. Cricket)"
+                        disabled={hasMaxHobbies}
                         className="flex-1 px-3 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-400 placeholder:text-slate-700 font-light"
                       />
                       <button
                         type="button"
+                        disabled={hasMaxHobbies}
                         onClick={() => {
-                          if (customHobbyInput.trim() && !selectedHobbies.includes(customHobbyInput.trim())) {
+                          if (!hasMaxHobbies && customHobbyInput.trim() && !selectedHobbies.includes(customHobbyInput.trim())) {
                             setSelectedHobbies(prev => [...prev, customHobbyInput.trim()]);
                             setCustomHobbyInput('');
                           }
                         }}
-                        className="px-4 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl text-xs text-slate-300 font-semibold cursor-pointer transition-colors"
+                        className="px-4 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl text-xs text-slate-300 font-semibold cursor-pointer transition-colors disabled:text-slate-600 disabled:cursor-not-allowed"
                       >
                         Add Tag
                       </button>
                     </div>
+                    <p className="text-[10px] text-slate-500">{selectedHobbies.length}/{REQUIRED_STORY_CHOICES} hobbies selected</p>
                   </div>
 
                   {/* Section D: Favorite Themes choice cloud (with preset superhero, technology, space, fairytale options) */}
@@ -2147,20 +2292,24 @@ export default function App() {
                     <div className="flex flex-wrap gap-2 py-0.5">
                       {['Superhero', 'Technology', 'Space', 'Fairytale'].map((tag) => {
                         const isChosen = selectedThemes.includes(tag);
+                        const disabled = !isChosen && hasMaxThemes;
                         return (
                           <button
                             key={tag}
                             type="button"
+                            disabled={disabled}
                             onClick={() => {
                               if (isChosen) {
                                 setSelectedThemes(prev => prev.filter(p => p !== tag));
-                              } else {
+                              } else if (!hasMaxThemes) {
                                 setSelectedThemes(prev => [...prev, tag]);
                               }
                             }}
                             className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-all cursor-pointer ${
                               isChosen 
                                 ? 'bg-indigo-500/10 text-indigo-300 border border-indigo-500/40' 
+                                : disabled
+                                ? 'bg-[#05060d] text-slate-600 border border-[#171b3f] cursor-not-allowed'
                                 : 'bg-[#05060d] text-slate-400 border border-[#212752]/50 hover:border-slate-700'
                             }`}
                           >
@@ -2176,21 +2325,24 @@ export default function App() {
                         value={customThemeInput}
                         onChange={(e) => setCustomThemeInput(e.target.value)}
                         placeholder="Type other custom themes... (e.g. Magic ocean, national parks)"
+                        disabled={hasMaxThemes}
                         className="flex-1 px-3 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-400 placeholder:text-slate-750 font-light"
                       />
                       <button
                         type="button"
+                        disabled={hasMaxThemes}
                         onClick={() => {
-                          if (customThemeInput.trim() && !selectedThemes.includes(customThemeInput.trim())) {
+                          if (!hasMaxThemes && customThemeInput.trim() && !selectedThemes.includes(customThemeInput.trim())) {
                             setSelectedThemes(prev => [...prev, customThemeInput.trim()]);
                             setCustomThemeInput('');
                           }
                         }}
-                        className="px-4 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl text-xs text-slate-300 font-semibold cursor-pointer transition-colors"
+                        className="px-4 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl text-xs text-slate-300 font-semibold cursor-pointer transition-colors disabled:text-slate-600 disabled:cursor-not-allowed"
                       >
                         Add Tag
                       </button>
                     </div>
+                    <p className="text-[10px] text-slate-500">{selectedThemes.length}/{REQUIRED_STORY_CHOICES} themes selected</p>
                   </div>
 
                   {/* Submit Button */}

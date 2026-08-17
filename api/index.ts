@@ -2,7 +2,10 @@
 import type { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { DateTime } from 'luxon';
+import { Resend } from 'resend';
 
 dotenv.config();
 
@@ -13,6 +16,20 @@ const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
 const mockCheckoutEnabled = !isProd && process.env.ALLOW_MOCK_CHECKOUT === 'true';
 const turnstileRequired = isProd || process.env.TURNSTILE_REQUIRED === 'true';
 const port = 3000;
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const ADMIN_AUDIO_BUCKET = 'admin-story-audio';
+const ADMIN_COOKIE = 'cozy_admin_session';
+const MAX_MP3_BYTES = 25 * 1024 * 1024;
+const SESSION_TTL_SECONDS = 8 * 60 * 60;
+const US_TIMEZONES = new Set([
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'Pacific/Honolulu'
+]);
 
 const signupAttempts = new Map<string, number[]>();
 const isRateLimited = (key: string, limit: number, windowMs: number) => {
@@ -26,6 +43,84 @@ const isRateLimited = (key: string, limit: number, windowMs: number) => {
   signupAttempts.set(key, recent);
   return false;
 };
+
+const parseCookies = (req: Request) => Object.fromEntries(
+  (req.header('cookie') || '')
+    .split(';')
+    .map(part => part.trim().split('='))
+    .filter(([key, value]) => Boolean(key && value))
+    .map(([key, ...value]) => [key, decodeURIComponent(value.join('='))])
+);
+
+const base64Url = (value: string | Buffer) => Buffer.from(value).toString('base64url');
+const sessionSignature = (payload: string, secret: string) =>
+  crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+
+const createAdminSession = (email: string, secret: string) => {
+  const payload = base64Url(JSON.stringify({
+    email,
+    exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+    nonce: crypto.randomBytes(16).toString('hex')
+  }));
+  return `${payload}.${sessionSignature(payload, secret)}`;
+};
+
+const getAdminSession = (req: Request) => {
+  const secret = process.env.ADMIN_SESSION_SECRET;
+  const expectedEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const token = parseCookies(req)[ADMIN_COOKIE];
+  if (!secret || secret.length < 32 || !expectedEmail || !token) return null;
+
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expectedSignature = sessionSignature(payload, secret);
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (actualBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { email?: string; exp?: number };
+    if (parsed.email !== expectedEmail || !parsed.exp || parsed.exp <= Math.floor(Date.now() / 1000)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const requireAdmin = (req: Request, res: Response, next: () => void) => {
+  if (!getAdminSession(req)) {
+    res.status(401).json({ error: 'Admin login required.' });
+    return;
+  }
+  next();
+};
+
+const isSameOrigin = (req: Request) => {
+  const origin = req.header('origin');
+  if (!origin) return !isProd;
+  const configuredOrigin = process.env.APP_URL?.replace(/\/$/, '');
+  const forwardedProtocol = req.header('x-forwarded-proto')?.split(',')[0]?.trim();
+  const requestOrigin = `${forwardedProtocol || req.protocol}://${req.get('host')}`;
+  return origin === configuredOrigin || origin === requestOrigin;
+};
+
+const verifyScryptPassword = (password: unknown, encodedHash: string | undefined) => {
+  if (typeof password !== 'string' || password.length < 8 || password.length > 200 || !encodedHash) return false;
+  const [algorithm, saltEncoded, hashEncoded] = encodedHash.split('$');
+  if (algorithm !== 'scrypt' || !saltEncoded || !hashEncoded) return false;
+  try {
+    const expected = Buffer.from(hashEncoded, 'base64url');
+    if (expected.length !== 64) return false;
+    const actual = crypto.scryptSync(password, Buffer.from(saltEncoded, 'base64url'), expected.length);
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+};
+
+const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+}[character] || character));
 
 const getClientIp = (req: Request) => {
   const forwarded = req.header('x-forwarded-for');
@@ -247,7 +342,7 @@ app.use((req: Request, res: Response, next) => {
   if (isProd) {
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com; media-src 'self' blob:; connect-src 'self' https://challenges.cloudflare.com https://vitals.vercel-insights.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+      "default-src 'self'; script-src 'self' https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com; media-src 'self' blob:; connect-src 'self' https://*.supabase.co https://challenges.cloudflare.com https://vitals.vercel-insights.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
     );
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -258,8 +353,274 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Webhook verification must receive the exact raw bytes sent by Resend.
+app.post('/api/admin/resend-webhook', express.raw({ type: 'application/json', limit: '256kb' }), async (req: Request, res: Response): Promise<void> => {
+  if (!resend || !process.env.RESEND_WEBHOOK_SECRET || !supabase) {
+    res.status(503).json({ error: 'Webhook handling is not configured.' });
+    return;
+  }
+
+  try {
+    const event = resend.webhooks.verify({
+      payload: Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body),
+      headers: {
+        id: req.header('svix-id') || '',
+        timestamp: req.header('svix-timestamp') || '',
+        signature: req.header('svix-signature') || ''
+      },
+      webhookSecret: process.env.RESEND_WEBHOOK_SECRET
+    }) as { type?: string; created_at?: string; data?: { email_id?: string } };
+
+    const statusByEvent: Record<string, string> = {
+      'email.sent': 'scheduled',
+      'email.delivered': 'delivered',
+      'email.delivery_delayed': 'delayed',
+      'email.bounced': 'bounced',
+      'email.failed': 'failed'
+    };
+    const emailId = event.data?.email_id;
+    const status = event.type ? statusByEvent[event.type] : undefined;
+
+    if (emailId && status) {
+      const { error } = await supabase.rpc('record_admin_story_email_event', {
+        p_resend_email_id: emailId,
+        p_status: status,
+        p_event_type: event.type,
+        p_event_at: event.created_at || new Date().toISOString(),
+        p_svix_id: req.header('svix-id') || null
+      });
+      if (error) throw error;
+    }
+
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Rejected Resend webhook:', error);
+    res.status(400).json({ error: 'Invalid webhook.' });
+  }
+});
+
 // JSON parsing for standard routes. Keep this small because signup payloads are tiny.
 app.use(express.json({ limit: '25kb' }));
+
+app.post('/api/admin/login', async (req: Request, res: Response): Promise<void> => {
+  if (!isSameOrigin(req)) {
+    res.status(403).json({ error: 'Invalid request origin.' });
+    return;
+  }
+
+  const clientIp = getClientIp(req);
+  if (isRateLimited(`admin-login:${clientIp}`, 5, 15 * 60 * 1000)) {
+    res.setHeader('Retry-After', '900');
+    res.status(429).json({ error: 'Too many login attempts. Try again in 15 minutes.' });
+    return;
+  }
+
+  const configuredEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const providedEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const passwordMatches = verifyScryptPassword(req.body?.password, process.env.ADMIN_PASSWORD_HASH);
+  const emailMatches = Boolean(configuredEmail && providedEmail && configuredEmail === providedEmail);
+
+  if (!emailMatches || !passwordMatches || !process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_SESSION_SECRET.length < 32) {
+    await new Promise(resolve => setTimeout(resolve, 350));
+    res.status(401).json({ error: 'Invalid email or password.' });
+    return;
+  }
+
+  const session = createAdminSession(configuredEmail!, process.env.ADMIN_SESSION_SECRET);
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${encodeURIComponent(session)}; Path=/; Max-Age=${SESSION_TTL_SECONDS}; HttpOnly; SameSite=Strict${isProd ? '; Secure' : ''}`);
+  res.json({ authenticated: true, email: configuredEmail });
+});
+
+app.get('/api/admin/session', (req: Request, res: Response) => {
+  const session = getAdminSession(req);
+  if (!session) {
+    res.status(401).json({ authenticated: false });
+    return;
+  }
+  res.json({ authenticated: true, email: session.email });
+});
+
+app.post('/api/admin/logout', requireAdmin, (req: Request, res: Response) => {
+  if (!isSameOrigin(req)) {
+    res.status(403).json({ error: 'Invalid request origin.' });
+    return;
+  }
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${isProd ? '; Secure' : ''}`);
+  res.json({ authenticated: false });
+});
+
+app.post('/api/admin/audio-upload-url', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!isSameOrigin(req)) {
+    res.status(403).json({ error: 'Invalid request origin.' });
+    return;
+  }
+  if (!supabase || !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    res.status(503).json({ error: 'Private upload is not configured.' });
+    return;
+  }
+
+  const { filename, contentType, size } = req.body || {};
+  if (typeof filename !== 'string' || !/\.mp3$/i.test(filename) || !['audio/mpeg', 'audio/mp3'].includes(contentType) || !Number.isInteger(size) || size <= 0 || size > MAX_MP3_BYTES) {
+    res.status(400).json({ error: 'Choose one MP3 file no larger than 25 MB.' });
+    return;
+  }
+
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-').slice(-120);
+  const objectPath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safeFilename}`;
+  const { data, error } = await supabase.storage.from(ADMIN_AUDIO_BUCKET).createSignedUploadUrl(objectPath);
+  if (error || !data?.token) {
+    console.error('Unable to create admin audio upload URL:', error);
+    res.status(500).json({ error: 'Unable to prepare the secure audio upload.' });
+    return;
+  }
+
+  res.json({
+    bucket: ADMIN_AUDIO_BUCKET,
+    path: objectPath,
+    token: data.token,
+    supabaseUrl: process.env.SUPABASE_URL,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+  });
+});
+
+app.post('/api/admin/delete-audio', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!isSameOrigin(req)) {
+    res.status(403).json({ error: 'Invalid request origin.' });
+    return;
+  }
+  if (!supabase || typeof req.body?.audioPath !== 'string' || !/^\d{4}-\d{2}-\d{2}\/[a-f0-9-]+-[^/]+\.mp3$/i.test(req.body.audioPath)) {
+    res.status(400).json({ error: 'Invalid private audio path.' });
+    return;
+  }
+  const { error } = await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([req.body.audioPath]);
+  if (error) {
+    res.status(500).json({ error: 'Unable to remove the private upload.' });
+    return;
+  }
+  res.json({ removed: true });
+});
+
+app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!isSameOrigin(req)) {
+    res.status(403).json({ error: 'Invalid request origin.' });
+    return;
+  }
+  if (!supabase || !resend) {
+    res.status(503).json({ error: 'Email scheduling is not fully configured.' });
+    return;
+  }
+
+  const recipient = typeof req.body?.recipient === 'string' ? req.body.recipient.trim().toLowerCase() : '';
+  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
+  const localDateTime = typeof req.body?.localDateTime === 'string' ? req.body.localDateTime : '';
+  const timezone = typeof req.body?.timezone === 'string' ? req.body.timezone : '';
+  const audioPath = typeof req.body?.audioPath === 'string' ? req.body.audioPath : '';
+  const originalFilename = typeof req.body?.filename === 'string' ? req.body.filename : 'bedtime-story.mp3';
+
+  if (!isValidEmail(recipient) || !subject || subject.length > 200 || !US_TIMEZONES.has(timezone) || !audioPath || !/\.mp3$/i.test(originalFilename)) {
+    res.status(400).json({ error: 'Please check the recipient, subject, MP3, date, time, and U.S. time zone.' });
+    return;
+  }
+
+  const clientTime = DateTime.fromISO(localDateTime, { zone: timezone });
+  const now = DateTime.utc();
+  if (!clientTime.isValid || clientTime.toUTC() <= now.plus({ minutes: 1 }) || clientTime.toUTC() > now.plus({ days: 30 })) {
+    res.status(400).json({ error: 'Delivery must be at least 1 minute from now and no more than 30 days ahead.' });
+    return;
+  }
+
+  const scheduledAt = clientTime.toUTC().toISO();
+  if (!scheduledAt) {
+    res.status(400).json({ error: 'Unable to convert the selected delivery time.' });
+    return;
+  }
+
+  const { data: audioBlob, error: downloadError } = await supabase.storage.from(ADMIN_AUDIO_BUCKET).download(audioPath);
+  if (downloadError || !audioBlob || audioBlob.size <= 0 || audioBlob.size > MAX_MP3_BYTES || audioBlob.type !== 'audio/mpeg') {
+    res.status(400).json({ error: 'The private MP3 upload is missing or invalid. Please upload it again.' });
+    return;
+  }
+
+  const audioBuffer = Buffer.from(await audioBlob.arrayBuffer());
+  const hasId3Header = audioBuffer.subarray(0, 3).toString('ascii') === 'ID3';
+  const hasMpegFrame = audioBuffer.length >= 2 && audioBuffer[0] === 0xff && (audioBuffer[1] & 0xe0) === 0xe0;
+  if (!hasId3Header && !hasMpegFrame) {
+    await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([audioPath]);
+    res.status(400).json({ error: 'The uploaded file does not contain valid MP3 audio.' });
+    return;
+  }
+
+  const scheduleId = crypto.randomUUID();
+  const { error: insertError } = await supabase.from('admin_scheduled_story_emails').insert({
+    id: scheduleId,
+    recipient_email: recipient,
+    subject,
+    client_local_time: clientTime.toISO({ includeOffset: false }),
+    client_timezone: timezone,
+    scheduled_at_utc: scheduledAt,
+    audio_filename: originalFilename.slice(-160),
+    status: 'scheduling'
+  });
+  if (insertError) {
+    console.error('Unable to create admin email log:', insertError);
+    res.status(500).json({ error: 'Unable to create the delivery log.' });
+    return;
+  }
+
+  try {
+    const result = await resend.emails.send({
+      from: 'Little Moon Stories <stories@cozykidtales.com>',
+      to: [recipient],
+      subject,
+      html: `<div style="font-family:Arial,sans-serif;color:#172554"><h2>${escapeHtml(subject)}</h2><p>Your personalized bedtime story is attached as an MP3 file.</p><p>Warmly,<br>Little Moon Stories</p></div>`,
+      attachments: [{ filename: originalFilename.slice(-160), content: audioBuffer }],
+      scheduledAt,
+      tags: [{ name: 'schedule_id', value: scheduleId }]
+    }, { idempotencyKey: `admin-story/${scheduleId}` });
+    if (result.error || !result.data?.id) throw new Error(result.error?.message || 'Resend did not return an email ID.');
+
+    const { error: updateError } = await supabase.from('admin_scheduled_story_emails').update({
+      resend_email_id: result.data.id,
+      status: 'scheduled',
+      updated_at: new Date().toISOString()
+    }).eq('id', scheduleId);
+    if (updateError) console.error('Email scheduled but log update failed:', updateError);
+
+    await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([audioPath]);
+    res.json({
+      success: true,
+      recipient,
+      clientLocalTime: clientTime.toFormat("MMM d, yyyy 'at' h:mm a"),
+      timezone,
+      scheduledAtUtc: scheduledAt,
+      resendEmailId: result.data.id,
+      status: 'scheduled'
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to schedule the email.';
+    await supabase.from('admin_scheduled_story_emails').update({ status: 'failed', error_message: message, updated_at: new Date().toISOString() }).eq('id', scheduleId);
+    await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([audioPath]);
+    console.error('Resend scheduling failed:', error);
+    res.status(502).json({ error: message });
+  }
+});
+
+app.get('/api/admin/story-email-logs', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  if (!supabase) {
+    res.status(503).json({ error: 'Delivery logs are not configured.' });
+    return;
+  }
+  const { data, error } = await supabase
+    .from('admin_scheduled_story_emails')
+    .select('id,recipient_email,subject,client_local_time,client_timezone,scheduled_at_utc,resend_email_id,status,error_message,updated_at')
+    .order('created_at', { ascending: false })
+    .limit(25);
+  if (error) {
+    res.status(500).json({ error: 'Unable to load delivery logs.' });
+    return;
+  }
+  res.json({ emails: data || [] });
+});
 
 // API endpoints
 app.get('/api/config', (req: Request, res: Response) => {
@@ -443,7 +804,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
 
     // 2. If checkout is not enabled yet, stop after saving the registration.
     // The plan stays unpaid until a real payment flow updates payment_status to 1.
-    if (!checkoutEnabled || req.body.register_only === true) {
+    if (requestedPlan === 'free_trial' || !checkoutEnabled || req.body.register_only === true) {
       res.json({
         registered: true,
         subscriberId: finalSubscriberId,
@@ -503,10 +864,14 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
 
           // Save token/orderId locally or in DB
           if (supabase) {
-            await supabase
+            const { error: orderSaveError } = await supabase
               .from('subscribers')
               .update({ payment_provider_order_id: payPalOrder.id })
               .eq('id', finalSubscriberId);
+            if (orderSaveError) {
+              console.error('Unable to save PayPal order ID:', orderSaveError);
+              throw new Error('Unable to associate checkout with the story plan.');
+            }
           } else {
             newSub.payment_provider_order_id = payPalOrder.id;
           }
@@ -578,6 +943,23 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
       return;
     }
 
+    if (supabase) {
+      const { data: pendingSubscriber, error: pendingLookupError } = await supabase
+        .from('subscribers')
+        .select('id')
+        .eq('id', sub_id)
+        .eq('plan_type', 'monthly')
+        .eq('payment_status', 0)
+        .eq('payment_provider_order_id', token)
+        .maybeSingle();
+
+      if (pendingLookupError || !pendingSubscriber) {
+        console.error('PayPal callback did not match a pending monthly plan.');
+        res.redirect(`/?checkout_cancelled=true`);
+        return;
+      }
+    }
+
     // Capture PayPal order
     const captureRes = await fetch(`${getPayPalApiUrl()}/v2/checkout/orders/${token}/capture`, {
       method: 'POST',
@@ -596,8 +978,21 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
 
     const captureData: any = await captureRes.json();
     const referenceId = captureData.purchase_units?.[0]?.reference_id;
-    if (String(referenceId) !== String(sub_id)) {
-      console.error('PayPal capture reference mismatch:', { referenceId, sub_id });
+    const capture = captureData.purchase_units?.[0]?.payments?.captures?.[0];
+    const capturedAmount = capture?.amount;
+    const paymentIsValid = captureData.status === 'COMPLETED'
+      && capture?.status === 'COMPLETED'
+      && capturedAmount?.currency_code === 'USD'
+      && capturedAmount?.value === '9.00';
+
+    if (String(referenceId) !== String(sub_id) || !paymentIsValid) {
+      console.error('PayPal capture verification failed.', {
+        referenceMatches: String(referenceId) === String(sub_id),
+        orderStatus: captureData.status,
+        captureStatus: capture?.status,
+        currency: capturedAmount?.currency_code,
+        amount: capturedAmount?.value
+      });
       res.redirect(`/?checkout_cancelled=true`);
       return;
     }
@@ -606,7 +1001,7 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
 
     // Now update database subscriber payment_status
     if (supabase) {
-      const { error } = await supabase
+      const { data: activatedSubscriber, error } = await supabase
         .from('subscribers')
         .update({ 
           payment_status: 1, 
@@ -614,9 +1009,18 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
           package_end_date: paidExpiryDate,
           plan_type: 'monthly'
         })
-        .eq('id', sub_id);
+        .eq('id', sub_id)
+        .eq('payment_provider_order_id', token)
+        .eq('payment_status', 0)
+        .select('id')
+        .maybeSingle();
       if (error) console.error('Supabase update error:', error);
-      if (!error) await enqueueSignupStoryJob(sub_id);
+      if (!error && activatedSubscriber) await enqueueSignupStoryJob(sub_id);
+      if (!error && !activatedSubscriber) {
+        console.error('PayPal payment was captured, but no pending subscriber was activated.');
+        res.redirect(`/?checkout_cancelled=true`);
+        return;
+      }
     }
 
     const sub = mockSubscribers.find(s => s.id === sub_id);
