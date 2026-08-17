@@ -678,7 +678,7 @@ VALUES (
   'admin-story-audio',
   false,
   26214400,
-  ARRAY['audio/mpeg']
+  ARRAY['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave']
 )
 ON CONFLICT (id) DO UPDATE SET
   public = excluded.public,

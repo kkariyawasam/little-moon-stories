@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { CheckCircle2, Clock3, FileAudio, Loader2, LockKeyhole, LogOut, Mail, Moon, RefreshCw, Send, ShieldCheck, Upload } from 'lucide-react';
 
-const MAX_MP3_BYTES = 25 * 1024 * 1024;
+const MAX_WAV_BYTES = 25 * 1024 * 1024;
 const TIMEZONES = [
   ['America/New_York', 'Eastern Time (New York)'],
   ['America/Chicago', 'Central Time (Chicago)'],
@@ -131,9 +131,9 @@ export default function AdminSendStory() {
       setAudioFile(null);
       return;
     }
-    if (!/\.mp3$/i.test(file.name) || !['audio/mpeg', 'audio/mp3'].includes(file.type) || file.size > MAX_MP3_BYTES || file.size === 0) {
+    if (!/\.wav$/i.test(file.name) || !['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(file.type) || file.size > MAX_WAV_BYTES || file.size === 0) {
       setAudioFile(null);
-      setError('Choose an MP3 file no larger than 25 MB.');
+      setError('Choose a WAV file no larger than 25 MB.');
       return;
     }
     setAudioFile(file);
@@ -144,7 +144,7 @@ export default function AdminSendStory() {
     setError('');
     setReceipt(null);
     if (!audioFile) {
-      setError('Choose an MP3 file first.');
+      setError('Choose a WAV file first.');
       return;
     }
     if (!deliveryDate || !deliveryTime) {
@@ -168,7 +168,7 @@ export default function AdminSendStory() {
       });
       const { error: uploadError } = await uploadClient.storage
         .from(upload.bucket)
-        .uploadToSignedUrl(upload.path, upload.token, audioFile, { contentType: 'audio/mpeg' });
+        .uploadToSignedUrl(upload.path, upload.token, audioFile, { contentType: 'audio/wav' });
       if (uploadError) throw new Error(`Audio upload failed: ${uploadError.message}`);
 
       const result = await apiJson<ScheduleReceipt>('/api/admin/schedule-story', {
@@ -232,7 +232,7 @@ export default function AdminSendStory() {
               <form onSubmit={scheduleStory} className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-1">Recipient email<div className="relative mt-1.5"><Mail className="absolute left-3 top-3 text-indigo-300" size={18} /><input type="email" required value={recipient} onChange={event => setRecipient(event.target.value)} placeholder="parent@example.com" className="w-full rounded-xl border border-indigo-300/25 bg-slate-950 py-3 pl-10 pr-3 text-sm text-white outline-none focus:border-amber-300" /></div></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-1">Subject<input required maxLength={200} value={subject} onChange={event => setSubject(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
-                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-2">MP3 story file<span className="mt-1.5 flex min-h-24 cursor-pointer items-center justify-center rounded-xl border border-dashed border-indigo-300/35 bg-indigo-300/5 px-4 text-center hover:border-amber-300/60"><input type="file" accept=".mp3,audio/mpeg" required className="sr-only" onChange={event => chooseAudio(event.target.files?.[0] || null)} /><span className="flex flex-col items-center gap-1 text-sm normal-case tracking-normal text-slate-200">{audioFile ? <><FileAudio className="text-amber-300" /><strong>{audioFile.name}</strong><span className="text-xs text-slate-400">{(audioFile.size / 1024 / 1024).toFixed(1)} MB</span></> : <><Upload className="text-indigo-300" /><strong>Choose an MP3</strong><span className="text-xs text-slate-400">Maximum 25 MB</span></>}</span></span></label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-2">WAV story file<span className="mt-1.5 flex min-h-24 cursor-pointer items-center justify-center rounded-xl border border-dashed border-indigo-300/35 bg-indigo-300/5 px-4 text-center hover:border-amber-300/60"><input type="file" accept=".wav,audio/wav,audio/x-wav" required className="sr-only" onChange={event => chooseAudio(event.target.files?.[0] || null)} /><span className="flex flex-col items-center gap-1 text-sm normal-case tracking-normal text-slate-200">{audioFile ? <><FileAudio className="text-amber-300" /><strong>{audioFile.name}</strong><span className="text-xs text-slate-400">{(audioFile.size / 1024 / 1024).toFixed(1)} MB</span></> : <><Upload className="text-indigo-300" /><strong>Choose a WAV file</strong><span className="text-xs text-slate-400">Maximum 25 MB</span></>}</span></span></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200">Client delivery date<input type="date" required min={minimumDate} value={deliveryDate} onChange={event => setDeliveryDate(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200">Client delivery time<input type="time" required value={deliveryTime} onChange={event => setDeliveryTime(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-2">Client U.S. time zone<select required value={timezone} onChange={event => setTimezone(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300">{TIMEZONES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

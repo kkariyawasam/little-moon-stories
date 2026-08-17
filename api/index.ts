@@ -19,7 +19,7 @@ const port = 3000;
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const ADMIN_AUDIO_BUCKET = 'admin-story-audio';
 const ADMIN_COOKIE = 'cozy_admin_session';
-const MAX_MP3_BYTES = 25 * 1024 * 1024;
+const MAX_WAV_BYTES = 25 * 1024 * 1024;
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const US_TIMEZONES = new Set([
   'America/New_York',
@@ -460,8 +460,8 @@ app.post('/api/admin/audio-upload-url', requireAdmin, async (req: Request, res: 
   }
 
   const { filename, contentType, size } = req.body || {};
-  if (typeof filename !== 'string' || !/\.mp3$/i.test(filename) || !['audio/mpeg', 'audio/mp3'].includes(contentType) || !Number.isInteger(size) || size <= 0 || size > MAX_MP3_BYTES) {
-    res.status(400).json({ error: 'Choose one MP3 file no larger than 25 MB.' });
+  if (typeof filename !== 'string' || !/\.wav$/i.test(filename) || !['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(contentType) || !Number.isInteger(size) || size <= 0 || size > MAX_WAV_BYTES) {
+    res.status(400).json({ error: 'Choose one WAV file no larger than 25 MB.' });
     return;
   }
 
@@ -488,7 +488,7 @@ app.post('/api/admin/delete-audio', requireAdmin, async (req: Request, res: Resp
     res.status(403).json({ error: 'Invalid request origin.' });
     return;
   }
-  if (!supabase || typeof req.body?.audioPath !== 'string' || !/^\d{4}-\d{2}-\d{2}\/[a-f0-9-]+-[^/]+\.mp3$/i.test(req.body.audioPath)) {
+  if (!supabase || typeof req.body?.audioPath !== 'string' || !/^\d{4}-\d{2}-\d{2}\/[a-f0-9-]+-[^/]+\.wav$/i.test(req.body.audioPath)) {
     res.status(400).json({ error: 'Invalid private audio path.' });
     return;
   }
@@ -515,10 +515,10 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
   const localDateTime = typeof req.body?.localDateTime === 'string' ? req.body.localDateTime : '';
   const timezone = typeof req.body?.timezone === 'string' ? req.body.timezone : '';
   const audioPath = typeof req.body?.audioPath === 'string' ? req.body.audioPath : '';
-  const originalFilename = typeof req.body?.filename === 'string' ? req.body.filename : 'bedtime-story.mp3';
+  const originalFilename = typeof req.body?.filename === 'string' ? req.body.filename : 'bedtime-story.wav';
 
-  if (!isValidEmail(recipient) || !subject || subject.length > 200 || !US_TIMEZONES.has(timezone) || !audioPath || !/\.mp3$/i.test(originalFilename)) {
-    res.status(400).json({ error: 'Please check the recipient, subject, MP3, date, time, and U.S. time zone.' });
+  if (!isValidEmail(recipient) || !subject || subject.length > 200 || !US_TIMEZONES.has(timezone) || !audioPath || !/\.wav$/i.test(originalFilename)) {
+    res.status(400).json({ error: 'Please check the recipient, subject, WAV file, date, time, and U.S. time zone.' });
     return;
   }
 
@@ -536,17 +536,18 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
   }
 
   const { data: audioBlob, error: downloadError } = await supabase.storage.from(ADMIN_AUDIO_BUCKET).download(audioPath);
-  if (downloadError || !audioBlob || audioBlob.size <= 0 || audioBlob.size > MAX_MP3_BYTES || audioBlob.type !== 'audio/mpeg') {
-    res.status(400).json({ error: 'The private MP3 upload is missing or invalid. Please upload it again.' });
+  if (downloadError || !audioBlob || audioBlob.size <= 0 || audioBlob.size > MAX_WAV_BYTES || !['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(audioBlob.type)) {
+    res.status(400).json({ error: 'The private WAV upload is missing or invalid. Please upload it again.' });
     return;
   }
 
   const audioBuffer = Buffer.from(await audioBlob.arrayBuffer());
-  const hasId3Header = audioBuffer.subarray(0, 3).toString('ascii') === 'ID3';
-  const hasMpegFrame = audioBuffer.length >= 2 && audioBuffer[0] === 0xff && (audioBuffer[1] & 0xe0) === 0xe0;
-  if (!hasId3Header && !hasMpegFrame) {
+  const hasWavHeader = audioBuffer.length >= 12
+    && audioBuffer.subarray(0, 4).toString('ascii') === 'RIFF'
+    && audioBuffer.subarray(8, 12).toString('ascii') === 'WAVE';
+  if (!hasWavHeader) {
     await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([audioPath]);
-    res.status(400).json({ error: 'The uploaded file does not contain valid MP3 audio.' });
+    res.status(400).json({ error: 'The uploaded file does not contain valid WAV audio.' });
     return;
   }
 
@@ -572,7 +573,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
       from: 'Little Moon Stories <stories@cozykidtales.com>',
       to: [recipient],
       subject,
-      html: `<div style="font-family:Arial,sans-serif;color:#172554"><h2>${escapeHtml(subject)}</h2><p>Your personalized bedtime story is attached as an MP3 file.</p><p>Warmly,<br>Little Moon Stories</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;color:#172554"><h2>${escapeHtml(subject)}</h2><p>Your personalized bedtime story is attached as a WAV file.</p><p>Warmly,<br>Little Moon Stories</p></div>`,
       attachments: [{ filename: originalFilename.slice(-160), content: audioBuffer }],
       scheduledAt,
       tags: [{ name: 'schedule_id', value: scheduleId }]

@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_scheduled_story_emails_created
   ON public.admin_scheduled_story_emails(created_at DESC);
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES ('admin-story-audio', 'admin-story-audio', false, 26214400, ARRAY['audio/mpeg'])
+VALUES ('admin-story-audio', 'admin-story-audio', false, 26214400, ARRAY['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'])
 ON CONFLICT (id) DO UPDATE SET
   public = excluded.public,
   file_size_limit = excluded.file_size_limit,
