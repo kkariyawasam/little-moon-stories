@@ -304,8 +304,15 @@ export default function App() {
 
     // Check query params for checkout success or cancellation
     const params = new URLSearchParams(window.location.search);
-    if (params.get('checkout_success') === 'true') {
-      setCheckoutSuccess(true);
+    const paymentConfirmation = params.get('payment_confirmation');
+    if (paymentConfirmation) {
+      fetch(`/api/payment-confirmation?token=${encodeURIComponent(paymentConfirmation)}`, {
+        credentials: 'same-origin'
+      })
+        .then(async response => response.ok ? response.json() : { confirmed: false })
+        .then(data => setCheckoutSuccess(data.confirmed === true))
+        .catch(() => setCheckoutSuccess(false))
+        .finally(() => window.history.replaceState({}, document.title, '/'));
     }
     if (params.get('checkout_cancelled') === 'true') {
       setCheckoutCancelled(true);
@@ -408,7 +415,7 @@ export default function App() {
   const hasMaxThemes = selectedThemes.length >= REQUIRED_STORY_CHOICES;
   const hasMaxHobbies = selectedHobbies.length >= REQUIRED_STORY_CHOICES;
   const childrenComplete = childrenList.length > 0 && childrenList.every(child =>
-    child.nickname.trim() && child.gender && child.birthday
+    child.nickname.trim() && child.birthday
   );
   const deliveryTimeComplete = /^([01]\d|2[0-3]):[0-5]\d$/.test(deliveryTime);
   const timezoneComplete = Boolean(timezone);
@@ -472,10 +479,6 @@ export default function App() {
         setSignupMessage({ type: 'error', text: `Please provide a Nickname for Child #${i + 1} (it is required).` });
         return;
       }
-      if (!child.gender) {
-        setSignupMessage({ type: 'error', text: `Please select a Gender for Child #${i + 1}.` });
-        return;
-      }
       if (!child.birthday) {
         setSignupMessage({ type: 'error', text: `Please select a Birth Year for Child #${i + 1}.` });
         return;
@@ -520,13 +523,24 @@ export default function App() {
           // Redirect to PayPal checkout
           window.location.href = data.checkoutSessionUrl;
         } else if (data.registered) {
+          const paymentLink = typeof config.paypalPaymentLink === 'string'
+            ? config.paypalPaymentLink
+            : '';
           setSignupMessage({
             type: 'success',
             text: requestedPlan === 'monthly'
-              ? 'Your monthly plan request was saved. We will contact you by email with the next steps.'
+              ? 'Your monthly plan request was saved. Continue to PayPal to complete the $9 payment.'
               : 'Your free story request was saved. You will receive one personalized story tomorrow at your selected time.'
           });
           if (requestedPlan === 'monthly') {
+            if (paymentLink.startsWith('https://www.paypal.com/')) {
+              window.location.assign(paymentLink);
+              return;
+            }
+            setSignupMessage({
+              type: 'error',
+              text: 'Your story plan was saved, but the payment page is temporarily unavailable. Please contact us before paying.'
+            });
             setBuilderStep(builderSteps.length - 1);
             scrollTo('story-builder');
           }
@@ -1525,20 +1539,10 @@ export default function App() {
                           type="text"
                           value={child.nickname}
                           onChange={(event) => handleUpdateChild(child.id, 'nickname', event.target.value)}
-                          placeholder="Child name or nickname"
+                          placeholder="Nickname only (not a full legal name)"
                           className="w-full px-2.5 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
                         />
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <select
-                            value={child.gender}
-                            onChange={(event) => handleUpdateChild(child.id, 'gender', event.target.value)}
-                            className="w-full px-2.5 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
-                          >
-                            <option value="">Gender</option>
-                            <option value="female">Female / Girl</option>
-                            <option value="male">Male / Boy</option>
-                            <option value="other">Other / Non-binary</option>
-                          </select>
+                        <div>
                           <select
                             value={child.birthday}
                             onChange={(event) => handleUpdateChild(child.id, 'birthday', event.target.value)}
@@ -2094,7 +2098,7 @@ export default function App() {
 
                           {/* Single Child Name / Nickname Input */}
                           <div>
-                            <label className="block text-[9px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Child Name / Nickname *</label>
+                            <label className="block text-[9px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Child Nickname *</label>
                             <div className="relative">
                               <Smile className="absolute left-3 top-2.5 w-3 h-3 text-slate-500" />
                               <input 
@@ -2102,28 +2106,13 @@ export default function App() {
                                 required
                                 value={child.nickname}
                                 onChange={(e) => handleUpdateChild(child.id, 'nickname', e.target.value)}
-                                placeholder="Enter child's name or nickname (e.g. Amara or Ami) *"
+                                placeholder="Nickname only, not a full legal name *"
                                 className="w-full pl-8 pr-3 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-xs text-slate-100 focus:outline-[#312e81] focus:border-indigo-400 placeholder:text-slate-700 transition-colors"
                               />
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-3.5">
-                            <div>
-                              <label className="block text-[9px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Gender *</label>
-                              <select
-                                required
-                                value={child.gender}
-                                onChange={(e) => handleUpdateChild(child.id, 'gender', e.target.value as any)}
-                                className="w-full px-3 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-xs text-slate-100 focus:outline-[#312e81] focus:border-indigo-400 transition-colors cursor-pointer"
-                              >
-                                <option value="" disabled className="bg-[#05060d] text-slate-500">Select Gender *</option>
-                                <option value="female" className="bg-[#05060d] text-slate-100">Female / Girl</option>
-                                <option value="male" className="bg-[#05060d] text-slate-100">Male / Boy</option>
-                                <option value="other" className="bg-[#05060d] text-slate-100">Other / Non-binary</option>
-                              </select>
-                            </div>
-
+                          <div>
                             <div>
                               <label className="block text-[9px] uppercase tracking-widest text-[#949cc8] font-bold mb-1 font-mono">Birth Year *</label>
                               <select

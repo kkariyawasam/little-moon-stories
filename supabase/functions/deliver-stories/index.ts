@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const SIGNED_URL_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 90; // 90 days
+const SIGNED_URL_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const STORY_AUDIO_BUCKET = 'story-audio';
 const DEFAULT_BATCH_SIZE = 20;
 const MAX_BATCH_SIZE = 100;
 
@@ -43,6 +44,13 @@ const escapeHtml = (value: string) =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 
+const isValidRecipientEmail = (value: unknown): value is string =>
+  typeof value === 'string'
+  && value.length >= 3
+  && value.length <= 254
+  && !/[\r\n<>]/.test(value)
+  && /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(value);
+
 const buildEmailHtml = (signedUrl: string) => `
   <div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033;">
     <p>Hello,</p>
@@ -62,6 +70,9 @@ const sendEmail = async (delivery: StoryDelivery, signedUrl: string) => {
   if (!resendApiKey) {
     throw new Error('RESEND_API_KEY is not configured.');
   }
+  if (!isValidRecipientEmail(delivery.parent_email)) {
+    throw new Error('Story recipient email is invalid.');
+  }
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -80,7 +91,7 @@ const sendEmail = async (delivery: StoryDelivery, signedUrl: string) => {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data?.message || data?.error || `Resend failed with status ${response.status}`);
+    throw new Error(`Resend failed with status ${response.status}`);
   }
 
   return data?.id || data?.messageId || null;
@@ -126,8 +137,16 @@ Deno.serve(async (req) => {
 
   for (const delivery of claimed) {
     try {
+      const allowedPaths = [
+        `stories/${delivery.story_job_id}.mp3`,
+        `stories/${delivery.story_job_id}.wav`,
+      ];
+      if (delivery.storage_bucket !== STORY_AUDIO_BUCKET || !allowedPaths.includes(delivery.storage_path)) {
+        throw new Error('Story audio storage reference is invalid.');
+      }
+
       const { data: signedData, error: signedError } = await supabase.storage
-        .from(delivery.storage_bucket)
+        .from(STORY_AUDIO_BUCKET)
         .createSignedUrl(delivery.storage_path, SIGNED_URL_EXPIRES_IN_SECONDS);
 
       if (signedError || !signedData?.signedUrl) {

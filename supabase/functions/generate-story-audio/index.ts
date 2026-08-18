@@ -7,18 +7,13 @@ const STORY_AUDIO_MIME_TYPE = 'audio/mpeg';
 
 type ChildProfile = {
   nickname?: string;
-  gender?: string;
-  birthday?: string;
 };
 
 type PromptPayload = {
-  parent_email?: string;
   age_range?: string;
   preferred_theme?: string;
   favorite_hobby?: string;
   favorite_animal?: string;
-  timezone?: string;
-  delivery_time?: string;
   children?: ChildProfile[];
 };
 
@@ -76,7 +71,6 @@ Write a warm, original bedtime story for children.
 
 Family details:
 - Child name(s): ${childNames}
-- Children profile JSON: ${JSON.stringify(children)}
 - Age range: ${cleanText(payload.age_range, '3-5')}
 - Theme options: ${listText(payload.preferred_theme, 'gentle adventure')}
 - Hobby options: ${listText(payload.favorite_hobby, 'reading')}
@@ -141,7 +135,7 @@ const generateStoryText = async (job: StoryGenerationJob) => {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data?.error?.message || `OpenAI story request failed with status ${response.status}`);
+    throw new Error(`OpenAI story request failed with status ${response.status}`);
   }
 
   return extractResponseText(data);
@@ -167,8 +161,7 @@ const createSpeechAudio = async (storyText: string) => {
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(text || `OpenAI speech request failed with status ${response.status}`);
+    throw new Error(`OpenAI speech request failed with status ${response.status}`);
   }
 
   return response.arrayBuffer();

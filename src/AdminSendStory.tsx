@@ -87,6 +87,12 @@ export default function AdminSendStory() {
   }, []);
 
   useEffect(() => {
+    const previousTitle = document.title;
+    const robotsMeta = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
+    const previousRobots = robotsMeta?.content;
+    document.title = 'Story Delivery Admin | Cozy Kid Tales';
+    if (robotsMeta) robotsMeta.content = 'noindex,nofollow,noarchive';
+
     apiJson<{ authenticated: boolean; email?: string }>('/api/admin/session')
       .then(data => {
         setAuthenticated(data.authenticated);
@@ -94,6 +100,11 @@ export default function AdminSendStory() {
       })
       .catch(() => setAuthenticated(false))
       .finally(() => setCheckingSession(false));
+
+    return () => {
+      document.title = previousTitle;
+      if (robotsMeta && previousRobots !== undefined) robotsMeta.content = previousRobots;
+    };
   }, []);
 
   useEffect(() => {

@@ -13,6 +13,8 @@ const app = express();
 const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 const isVercel = process.env.VERCEL === '1';
 const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
+const manualPayPalPaymentLink = process.env.PAYPAL_PAYMENT_LINK?.trim()
+  || 'https://www.paypal.com/ncp/payment/PN3SZACZWV4C6';
 const mockCheckoutEnabled = !isProd && process.env.ALLOW_MOCK_CHECKOUT === 'true';
 const turnstileRequired = isProd || process.env.TURNSTILE_REQUIRED === 'true';
 const port = 3000;
@@ -20,6 +22,7 @@ const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KE
 const ADMIN_AUDIO_BUCKET = 'admin-story-audio';
 const ADMIN_COOKIE = 'cozy_admin_session';
 const MAX_WAV_BYTES = 25 * 1024 * 1024;
+const ADMIN_AUDIO_RETENTION_MONTHS = 1;
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const US_TIMEZONES = new Set([
   'America/New_York',
@@ -30,6 +33,13 @@ const US_TIMEZONES = new Set([
   'America/Anchorage',
   'Pacific/Honolulu'
 ]);
+const ALLOWED_AGE_RANGES = new Set(['3-5', '6-8']);
+const ALLOWED_PAYMENT_PLANS = new Set(['monthly', 'free_trial']);
+const REQUIRED_STORY_CHOICES = 5;
+const SAFE_NICKNAME_PATTERN = /^[\p{L}\p{M}\p{N} .'-]+$/u;
+const SAFE_PREFERENCE_PATTERN = /^[\p{L}\p{M}\p{N} &'()/-]+$/u;
+const UNSAFE_TEXT_PATTERN = /[<>\u0000-\u001F\u007F]|(?:javascript\s*:)|(?:https?:\/\/)|(?:www\.)/iu;
+const ADMIN_AUDIO_PATH_PATTERN = /^\d{4}-\d{2}-\d{2}\/[a-f0-9-]{36}-[a-zA-Z0-9._-]+\.wav$/;
 
 const signupAttempts = new Map<string, number[]>();
 const isRateLimited = (key: string, limit: number, windowMs: number) => {
@@ -55,6 +65,42 @@ const parseCookies = (req: Request) => Object.fromEntries(
 const base64Url = (value: string | Buffer) => Buffer.from(value).toString('base64url');
 const sessionSignature = (payload: string, secret: string) =>
   crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+
+const timingSafeStringEqual = (left: string | undefined, right: string | undefined) => {
+  if (!left || !right) return false;
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const createPaymentConfirmation = (subscriberId: string, orderId: string) => {
+  const secret = process.env.PAYPAL_CLIENT_SECRET;
+  if (!secret) return null;
+  const payload = base64Url(JSON.stringify({
+    subscriberId,
+    orderId,
+    exp: Math.floor(Date.now() / 1000) + 10 * 60
+  }));
+  return `${payload}.${sessionSignature(payload, secret)}`;
+};
+
+const verifyPaymentConfirmation = (token: unknown) => {
+  const secret = process.env.PAYPAL_CLIENT_SECRET;
+  if (typeof token !== 'string' || !secret) return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature || !timingSafeStringEqual(signature, sessionSignature(payload, secret))) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      subscriberId?: string;
+      orderId?: string;
+      exp?: number;
+    };
+    if (!parsed.subscriberId || !parsed.orderId || !parsed.exp || parsed.exp <= Math.floor(Date.now() / 1000)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
 
 const createAdminSession = (email: string, secret: string) => {
   const payload = base64Url(JSON.stringify({
@@ -194,8 +240,11 @@ const getPayPalAccessToken = async (): Promise<string | null> => {
   }
 };
 
+const normalizeEmail = (value: unknown) => typeof value === 'string' ? value.trim().toLowerCase() : '';
+
 const isValidEmail = (value: unknown): value is string => {
-  return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
+  if (typeof value !== 'string' || value.length < 3 || value.length > 254 || /[\r\n<>]/.test(value)) return false;
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(value);
 };
 
 const isValidDeliveryTime = (value: unknown): value is string => {
@@ -218,6 +267,34 @@ const cleanText = (value: unknown, fallback: string, maxLength = 250): string =>
   return trimmed ? trimmed.slice(0, maxLength) : fallback;
 };
 
+const normalizeSafeText = (
+  value: unknown,
+  label: string,
+  maxLength: number,
+  pattern: RegExp
+) => {
+  if (typeof value !== 'string') throw new Error(`${label} is required.`);
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (!normalized || normalized.length > maxLength || UNSAFE_TEXT_PATTERN.test(normalized) || !pattern.test(normalized)) {
+    throw new Error(`${label} contains invalid characters or is too long.`);
+  }
+  return normalized;
+};
+
+const normalizePreferenceList = (value: unknown, label: string) => {
+  if (typeof value !== 'string' || value.length > 250) {
+    throw new Error(`${label} selections are invalid.`);
+  }
+  const items = value.split(',').map(item =>
+    normalizeSafeText(item, label, 40, SAFE_PREFERENCE_PATTERN)
+  );
+  const unique = new Set(items.map(item => item.toLocaleLowerCase('en-US')));
+  if (items.length !== REQUIRED_STORY_CHOICES || unique.size !== REQUIRED_STORY_CHOICES) {
+    throw new Error(`Choose exactly ${REQUIRED_STORY_CHOICES} different ${label.toLowerCase()} options.`);
+  }
+  return items.join(', ');
+};
+
 const normalizeChildren = (children: unknown): ChildDetail[] => {
   if (!Array.isArray(children) || children.length === 0 || children.length > 5) {
     throw new Error('Please provide between 1 and 5 child profiles.');
@@ -229,26 +306,21 @@ const normalizeChildren = (children: unknown): ChildDetail[] => {
     }
 
     const record = child as Record<string, unknown>;
-    const nickname = cleanText(record.nickname || record.name, '', 80);
-    const gender = cleanText(record.gender, '', 20);
-    const birthday = cleanText(record.birthday, '', 20);
+    const nickname = normalizeSafeText(record.nickname || record.name, `Child #${index + 1} nickname`, 40, SAFE_NICKNAME_PATTERN);
+    const birthYear = cleanText(record.birthday, '', 4);
+    if (!/^\d{4}$/.test(birthYear)) throw new Error(`Child #${index + 1} birth year is invalid.`);
 
-    if (!nickname) throw new Error(`Child #${index + 1} nickname is required.`);
-    if (!['female', 'male', 'other'].includes(gender)) throw new Error(`Child #${index + 1} gender is invalid.`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) throw new Error(`Child #${index + 1} birthday is invalid.`);
-
-    const birthDate = new Date(`${birthday}T00:00:00Z`);
-    const now = new Date();
-    const earliest = new Date(Date.UTC(now.getUTCFullYear() - 20, now.getUTCMonth(), now.getUTCDate()));
-    if (Number.isNaN(birthDate.getTime()) || birthDate > now || birthDate < earliest) {
-      throw new Error(`Child #${index + 1} birthday is outside the allowed range.`);
+    const numericBirthYear = Number(birthYear);
+    const currentYear = new Date().getUTCFullYear();
+    if (numericBirthYear > currentYear || numericBirthYear < currentYear - 20) {
+      throw new Error(`Child #${index + 1} birth year is outside the allowed range.`);
     }
 
     return {
       name: nickname,
       nickname,
-      gender,
-      birthday
+      gender: 'not_provided',
+      birthday: birthYear
     };
   });
 };
@@ -353,6 +425,14 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Never allow browsers or intermediary caches to retain private admin data.
+app.use('/api/admin', (_req: Request, res: Response, next) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  next();
+});
+
 // Webhook verification must receive the exact raw bytes sent by Resend.
 app.post('/api/admin/resend-webhook', express.raw({ type: 'application/json', limit: '256kb' }), async (req: Request, res: Response): Promise<void> => {
   if (!resend || !process.env.RESEND_WEBHOOK_SECRET || !supabase) {
@@ -416,7 +496,7 @@ app.post('/api/admin/login', async (req: Request, res: Response): Promise<void> 
   }
 
   const configuredEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-  const providedEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const providedEmail = normalizeEmail(req.body?.email);
   const passwordMatches = verifyScryptPassword(req.body?.password, process.env.ADMIN_PASSWORD_HASH);
   const emailMatches = Boolean(configuredEmail && providedEmail && configuredEmail === providedEmail);
 
@@ -460,7 +540,7 @@ app.post('/api/admin/audio-upload-url', requireAdmin, async (req: Request, res: 
   }
 
   const { filename, contentType, size } = req.body || {};
-  if (typeof filename !== 'string' || !/\.wav$/i.test(filename) || !['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(contentType) || !Number.isInteger(size) || size <= 0 || size > MAX_WAV_BYTES) {
+  if (typeof filename !== 'string' || filename.length > 160 || !/^[a-zA-Z0-9 ._-]+\.wav$/i.test(filename) || !['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(contentType) || !Number.isInteger(size) || size <= 0 || size > MAX_WAV_BYTES) {
     res.status(400).json({ error: 'Choose one WAV file no larger than 25 MB.' });
     return;
   }
@@ -488,7 +568,7 @@ app.post('/api/admin/delete-audio', requireAdmin, async (req: Request, res: Resp
     res.status(403).json({ error: 'Invalid request origin.' });
     return;
   }
-  if (!supabase || typeof req.body?.audioPath !== 'string' || !/^\d{4}-\d{2}-\d{2}\/[a-f0-9-]+-[^/]+\.wav$/i.test(req.body.audioPath)) {
+  if (!supabase || typeof req.body?.audioPath !== 'string' || !ADMIN_AUDIO_PATH_PATTERN.test(req.body.audioPath)) {
     res.status(400).json({ error: 'Invalid private audio path.' });
     return;
   }
@@ -510,14 +590,32 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     return;
   }
 
-  const recipient = typeof req.body?.recipient === 'string' ? req.body.recipient.trim().toLowerCase() : '';
-  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
+  const clientIp = getClientIp(req);
+  if (isRateLimited(`admin-schedule:${clientIp}`, 30, 60 * 60 * 1000)) {
+    res.setHeader('Retry-After', '3600');
+    res.status(429).json({ error: 'Too many scheduling requests. Try again later.' });
+    return;
+  }
+
+  const recipient = normalizeEmail(req.body?.recipient);
+  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim().replace(/\s+/g, ' ') : '';
   const localDateTime = typeof req.body?.localDateTime === 'string' ? req.body.localDateTime : '';
   const timezone = typeof req.body?.timezone === 'string' ? req.body.timezone : '';
   const audioPath = typeof req.body?.audioPath === 'string' ? req.body.audioPath : '';
   const originalFilename = typeof req.body?.filename === 'string' ? req.body.filename : 'bedtime-story.wav';
 
-  if (!isValidEmail(recipient) || !subject || subject.length > 200 || !US_TIMEZONES.has(timezone) || !audioPath || !/\.wav$/i.test(originalFilename)) {
+  if (
+    !isValidEmail(recipient)
+    || !subject
+    || subject.length > 120
+    || UNSAFE_TEXT_PATTERN.test(subject)
+    || !US_TIMEZONES.has(timezone)
+    || !/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(localDateTime)
+    || !ADMIN_AUDIO_PATH_PATTERN.test(audioPath)
+    || typeof originalFilename !== 'string'
+    || originalFilename.length > 160
+    || !/^[a-zA-Z0-9 ._-]+\.wav$/i.test(originalFilename)
+  ) {
     res.status(400).json({ error: 'Please check the recipient, subject, WAV file, date, time, and U.S. time zone.' });
     return;
   }
@@ -552,6 +650,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
   }
 
   const scheduleId = crypto.randomUUID();
+  const deleteAfter = DateTime.utc().plus({ months: ADMIN_AUDIO_RETENTION_MONTHS }).toISO();
   const { error: insertError } = await supabase.from('admin_scheduled_story_emails').insert({
     id: scheduleId,
     recipient_email: recipient,
@@ -560,6 +659,8 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     client_timezone: timezone,
     scheduled_at_utc: scheduledAt,
     audio_filename: originalFilename.slice(-160),
+    audio_storage_path: audioPath,
+    audio_delete_after: deleteAfter,
     status: 'scheduling'
   });
   if (insertError) {
@@ -587,7 +688,6 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     }).eq('id', scheduleId);
     if (updateError) console.error('Email scheduled but log update failed:', updateError);
 
-    await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([audioPath]);
     res.json({
       success: true,
       recipient,
@@ -600,10 +700,60 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to schedule the email.';
     await supabase.from('admin_scheduled_story_emails').update({ status: 'failed', error_message: message, updated_at: new Date().toISOString() }).eq('id', scheduleId);
-    await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([audioPath]);
     console.error('Resend scheduling failed:', error);
     res.status(502).json({ error: message });
   }
+});
+
+app.get('/api/admin/cleanup-audio', async (req: Request, res: Response): Promise<void> => {
+  const cronSecret = process.env.CRON_SECRET;
+  const authorization = req.header('authorization');
+  if (!timingSafeStringEqual(authorization, cronSecret ? `Bearer ${cronSecret}` : undefined)) {
+    res.status(401).json({ error: 'Invalid cleanup authorization.' });
+    return;
+  }
+  if (!supabase) {
+    res.status(503).json({ error: 'Private storage is not configured.' });
+    return;
+  }
+
+  const { data: expired, error: queryError } = await supabase
+    .from('admin_scheduled_story_emails')
+    .select('id,audio_storage_path')
+    .not('audio_storage_path', 'is', null)
+    .is('audio_deleted_at', null)
+    .lte('audio_delete_after', new Date().toISOString())
+    .limit(100);
+  if (queryError) {
+    console.error('Unable to load expired admin audio:', queryError);
+    res.status(500).json({ error: 'Unable to load expired audio.' });
+    return;
+  }
+
+  let deletedCount = 0;
+  const failures: string[] = [];
+  for (const item of expired || []) {
+    const audioPath = item.audio_storage_path;
+    if (typeof audioPath !== 'string') continue;
+    const { error: removeError } = await supabase.storage.from(ADMIN_AUDIO_BUCKET).remove([audioPath]);
+    if (removeError) {
+      failures.push(item.id);
+      console.error(`Unable to delete expired admin audio ${item.id}:`, removeError);
+      continue;
+    }
+    const { error: updateError } = await supabase
+      .from('admin_scheduled_story_emails')
+      .update({ audio_deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', item.id);
+    if (updateError) {
+      failures.push(item.id);
+      console.error(`Unable to mark admin audio ${item.id} deleted:`, updateError);
+      continue;
+    }
+    deletedCount += 1;
+  }
+
+  res.json({ checked: expired?.length || 0, deleted_count: deletedCount, failed_ids: failures });
 });
 
 app.get('/api/admin/story-email-logs', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
@@ -623,21 +773,68 @@ app.get('/api/admin/story-email-logs', requireAdmin, async (_req: Request, res: 
   res.json({ emails: data || [] });
 });
 
+// Fail closed if a new or misspelled admin endpoint reaches this server without
+// an explicit route and authentication decision above.
+app.all('/api/admin/*', (_req: Request, res: Response) => {
+  res.status(404).json({ error: 'Not found.' });
+});
+
 // API endpoints
 app.get('/api/config', (req: Request, res: Response) => {
   res.json({
     checkoutEnabled,
+    paypalPaymentLink: manualPayPalPaymentLink,
     registrationConfigured: Boolean(supabase),
     turnstileRequired,
     turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null
   });
 });
 
+app.get('/api/payment-confirmation', async (req: Request, res: Response): Promise<void> => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  const confirmation = verifyPaymentConfirmation(req.query.token);
+  if (!confirmation) {
+    res.status(400).json({ confirmed: false });
+    return;
+  }
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('subscribers')
+      .select('id')
+      .eq('id', confirmation.subscriberId)
+      .eq('payment_provider_order_id', confirmation.orderId)
+      .eq('payment_status', 1)
+      .maybeSingle();
+    if (error || !data) {
+      res.status(404).json({ confirmed: false });
+      return;
+    }
+  } else {
+    const subscriber = mockSubscribers.find(item =>
+      item.id === confirmation.subscriberId
+      && item.payment_provider_order_id === confirmation.orderId
+      && item.payment_status === 1
+    );
+    if (!subscriber) {
+      res.status(404).json({ confirmed: false });
+      return;
+    }
+  }
+
+  res.json({ confirmed: true });
+});
+
 // Subscriber action endpoint (Signup + optional payment handler)
 app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> => {
+  if (!isSameOrigin(req)) {
+    res.status(403).json({ error: 'Invalid request origin.' });
+    return;
+  }
+
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
   const {
     parent_email,
-    child_names,
     children_list,
     age_range,
     delivery_time,
@@ -645,15 +842,10 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     preferred_theme,
     favorite_hobby,
     favorite_animal
-  } = req.body;
+  } = body;
 
   if (isProd && !supabase) {
     res.status(503).json({ error: 'Registration is temporarily unavailable.' });
-    return;
-  }
-
-  if (!parent_email || !child_names) {
-    res.status(400).json({ error: 'Parent email and child name are required.' });
     return;
   }
 
@@ -663,14 +855,14 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
   }
 
   const clientIp = getClientIp(req);
-  const normalizedEmailForLimit = typeof parent_email === 'string' ? parent_email.trim().toLowerCase() : 'invalid';
+  const normalizedEmailForLimit = normalizeEmail(parent_email) || 'invalid';
   if (isRateLimited(`ip:${clientIp}`, 5, 15 * 60 * 1000)) {
     res.setHeader('Retry-After', '900');
     res.status(429).json({ error: 'Too many story requests. Please try again later.' });
     return;
   }
 
-  if (!(await verifyTurnstile(req.body.turnstile_token, clientIp))) {
+  if (!(await verifyTurnstile(body.turnstile_token, clientIp))) {
     res.status(400).json({ error: 'Security check failed. Please refresh the page and try again.' });
     return;
   }
@@ -682,34 +874,46 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
   }
 
   let normalizedChildren: ChildDetail[];
+  let normalizedTheme: string;
+  let normalizedHobby: string;
+  let normalizedAnimal: string;
+  let normalizedAgeRange: '3-5' | '6-8';
+  let requestedPlan: 'monthly' | 'free_trial';
   try {
-    if (!isValidEmail(parent_email)) throw new Error('Please provide a valid parent email.');
-    if (age_range && !['3-5', '6-8'].includes(age_range)) throw new Error('Age range is invalid.');
+    if (!isValidEmail(normalizedEmailForLimit)) throw new Error('Please provide a valid parent email.');
+    if (typeof age_range !== 'string' || !ALLOWED_AGE_RANGES.has(age_range)) throw new Error('Age range is invalid.');
     if (!isValidDeliveryTime(delivery_time)) throw new Error('Delivery time must use HH:mm format.');
     if (!isValidTimezone(timezone)) throw new Error('Timezone is invalid.');
+    if (typeof body.plan_type !== 'string' || !ALLOWED_PAYMENT_PLANS.has(body.plan_type)) {
+      throw new Error('Payment plan is invalid.');
+    }
     normalizedChildren = normalizeChildren(children_list);
+    normalizedTheme = normalizePreferenceList(preferred_theme, 'Theme');
+    normalizedHobby = normalizePreferenceList(favorite_hobby, 'Hobby');
+    normalizedAnimal = normalizePreferenceList(favorite_animal, 'Animal');
+    normalizedAgeRange = age_range as '3-5' | '6-8';
+    requestedPlan = body.plan_type as 'monthly' | 'free_trial';
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Invalid signup details.' });
     return;
   }
 
   let tempSubId = `sub_temp_${Date.now().toString(36)}`;
-  const requestedPlan = req.body.plan_type === 'free_trial' ? 'free_trial' : 'monthly';
   const expiresAt = requestedPlan === 'monthly'
     ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     : null;
 
     const newSub: Subscriber = {
     id: '', // Will be updated as soon as DB generates the SERIAL/IDENTITY id starting from 1
-    parent_email: parent_email.trim().toLowerCase(),
-    child_names: cleanText(child_names, normalizedChildren.map(c => c.nickname).join(' & '), 250),
+    parent_email: normalizedEmailForLimit,
+    child_names: normalizedChildren.map(c => c.nickname).join(' & '),
     children_list: normalizedChildren,
-    age_range: age_range || '3-5',
+    age_range: normalizedAgeRange,
     delivery_time,
     timezone,
-    preferred_theme: cleanText(preferred_theme, 'Adventure', 250),
-    favorite_hobby: cleanText(favorite_hobby, 'reading', 250),
-    favorite_animal: cleanText(favorite_animal, 'elephant', 250),
+    preferred_theme: normalizedTheme,
+    favorite_hobby: normalizedHobby,
+    favorite_animal: normalizedAnimal,
     plan_type: requestedPlan,
     payment_status: 0,
     package_end_date: expiresAt,
@@ -805,7 +1009,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
 
     // 2. If checkout is not enabled yet, stop after saving the registration.
     // The plan stays unpaid until a real payment flow updates payment_status to 1.
-    if (requestedPlan === 'free_trial' || !checkoutEnabled || req.body.register_only === true) {
+    if (requestedPlan === 'free_trial' || !checkoutEnabled || body.register_only === true) {
       res.json({
         registered: true,
         subscriberId: finalSubscriberId,
@@ -826,7 +1030,8 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'PayPal-Request-Id': `create-order-${finalSubscriberId}`
             },
             body: JSON.stringify({
               intent: 'CAPTURE',
@@ -925,11 +1130,11 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
     return;
   }
 
-  const { token, sub_id } = req.query; // token is PayPal's checkout order ID when returning
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  const subId = typeof req.query.sub_id === 'string' ? req.query.sub_id : '';
   const port = 3000;
-  const redirectBase = process.env.APP_URL || `http://localhost:${port}`;
 
-  if (!token || !sub_id) {
+  if (!/^[A-Z0-9]{8,32}$/i.test(token) || !/^\d+$/.test(subId)) {
     res.redirect(`/?checkout_cancelled=true`);
     return;
   }
@@ -945,17 +1150,29 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
     }
 
     if (supabase) {
-      const { data: pendingSubscriber, error: pendingLookupError } = await supabase
+      const { data: subscriber, error: subscriberLookupError } = await supabase
         .from('subscribers')
-        .select('id')
-        .eq('id', sub_id)
+        .select('id,payment_status,payment_provider_order_id')
+        .eq('id', subId)
         .eq('plan_type', 'monthly')
-        .eq('payment_status', 0)
         .eq('payment_provider_order_id', token)
         .maybeSingle();
 
-      if (pendingLookupError || !pendingSubscriber) {
-        console.error('PayPal callback did not match a pending monthly plan.');
+      if (subscriberLookupError || !subscriber) {
+        console.error('PayPal callback did not match its stored monthly plan.');
+        res.redirect(`/?checkout_cancelled=true`);
+        return;
+      }
+
+      // A browser refresh or repeated PayPal redirect is a successful no-op.
+      if (subscriber.payment_status === 1) {
+        const confirmation = createPaymentConfirmation(subId, token);
+        res.redirect(confirmation ? `/?payment_confirmation=${encodeURIComponent(confirmation)}` : '/');
+        return;
+      }
+
+      if (subscriber.payment_status !== 0) {
+        console.error('PayPal callback matched a plan with an invalid payment state.');
         res.redirect(`/?checkout_cancelled=true`);
         return;
       }
@@ -966,7 +1183,8 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'PayPal-Request-Id': `capture-order-${token}`
       },
       body: JSON.stringify({})
     });
@@ -986,9 +1204,9 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
       && capturedAmount?.currency_code === 'USD'
       && capturedAmount?.value === '9.00';
 
-    if (String(referenceId) !== String(sub_id) || !paymentIsValid) {
+    if (String(referenceId) !== subId || !paymentIsValid) {
       console.error('PayPal capture verification failed.', {
-        referenceMatches: String(referenceId) === String(sub_id),
+        referenceMatches: String(referenceId) === subId,
         orderStatus: captureData.status,
         captureStatus: capture?.status,
         currency: capturedAmount?.currency_code,
@@ -1010,21 +1228,32 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
           package_end_date: paidExpiryDate,
           plan_type: 'monthly'
         })
-        .eq('id', sub_id)
+        .eq('id', subId)
         .eq('payment_provider_order_id', token)
         .eq('payment_status', 0)
         .select('id')
         .maybeSingle();
       if (error) console.error('Supabase update error:', error);
-      if (!error && activatedSubscriber) await enqueueSignupStoryJob(sub_id);
+      if (!error && activatedSubscriber) await enqueueSignupStoryJob(subId);
       if (!error && !activatedSubscriber) {
-        console.error('PayPal payment was captured, but no pending subscriber was activated.');
-        res.redirect(`/?checkout_cancelled=true`);
-        return;
+        // Another concurrent callback may have completed the same conditional
+        // update first. Confirm the final state before returning an error.
+        const { data: alreadyActivated } = await supabase
+          .from('subscribers')
+          .select('id')
+          .eq('id', subId)
+          .eq('payment_provider_order_id', token)
+          .eq('payment_status', 1)
+          .maybeSingle();
+        if (!alreadyActivated) {
+          console.error('PayPal payment was captured, but no subscriber was activated.');
+          res.redirect(`/?checkout_cancelled=true`);
+          return;
+        }
       }
     }
 
-    const sub = mockSubscribers.find(s => s.id === sub_id);
+    const sub = mockSubscribers.find(s => s.id === subId);
     if (sub) {
       sub.payment_status = 1;
       sub.payment_provider_order_id = token as string;
@@ -1032,7 +1261,8 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
       sub.plan_type = 'monthly';
     }
 
-    res.redirect(`/?checkout_success=true&sub_id=${sub_id}`);
+    const confirmation = createPaymentConfirmation(subId, token);
+    res.redirect(confirmation ? `/?payment_confirmation=${encodeURIComponent(confirmation)}` : '/');
   } catch (err) {
     console.error('PayPal capture callback error:', err);
     res.redirect(`/?checkout_cancelled=true`);

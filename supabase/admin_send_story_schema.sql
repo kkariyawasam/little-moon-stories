@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS public.admin_scheduled_story_emails (
   client_timezone TEXT NOT NULL,
   scheduled_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
   audio_filename TEXT NOT NULL,
+  audio_storage_path TEXT,
+  audio_delete_after TIMESTAMP WITH TIME ZONE,
+  audio_deleted_at TIMESTAMP WITH TIME ZONE,
   resend_email_id TEXT UNIQUE,
   status TEXT NOT NULL DEFAULT 'scheduling',
   error_message TEXT,
@@ -17,6 +20,11 @@ CREATE TABLE IF NOT EXISTS public.admin_scheduled_story_emails (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+ALTER TABLE public.admin_scheduled_story_emails
+  ADD COLUMN IF NOT EXISTS audio_storage_path TEXT,
+  ADD COLUMN IF NOT EXISTS audio_delete_after TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN IF NOT EXISTS audio_deleted_at TIMESTAMP WITH TIME ZONE;
 
 CREATE TABLE IF NOT EXISTS public.admin_story_email_events (
   svix_id TEXT PRIMARY KEY,
@@ -28,6 +36,10 @@ CREATE TABLE IF NOT EXISTS public.admin_story_email_events (
 
 CREATE INDEX IF NOT EXISTS idx_admin_scheduled_story_emails_created
   ON public.admin_scheduled_story_emails(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_admin_story_audio_cleanup
+  ON public.admin_scheduled_story_emails(audio_delete_after)
+  WHERE audio_storage_path IS NOT NULL AND audio_deleted_at IS NULL;
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('admin-story-audio', 'admin-story-audio', false, 26214400, ARRAY['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'])

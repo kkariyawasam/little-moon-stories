@@ -6,6 +6,12 @@
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/admin/cleanup-audio",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
