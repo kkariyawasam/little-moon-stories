@@ -1776,10 +1776,6 @@ export default function App() {
           </div>
 
           <div className="p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#121b4a] to-[#0a113a] border border-indigo-400/40 flex flex-col justify-between gap-8 text-left relative overflow-hidden">
-            <div className="absolute top-4 right-4 bg-amber-300/10 text-amber-200 border border-amber-300/30 text-[9px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full font-mono">
-              Manual Confirmation
-            </div>
-
             <div className="space-y-4">
               <span className="text-[10px] font-bold uppercase tracking-widest text-[#b4bcff] font-mono">30 Nights of Stories</span>
               <h3 className="text-2xl font-bold text-white">Monthly Plan</h3>
