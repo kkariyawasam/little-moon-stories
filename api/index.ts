@@ -790,6 +790,7 @@ app.all('/api/admin/*', (_req: Request, res: Response) => {
 app.get('/api/config', (req: Request, res: Response) => {
   res.json({
     checkoutEnabled,
+    isPreview: isVercel && process.env.VERCEL_ENV === 'preview',
     paypalPaymentLink: manualPayPalPaymentLink,
     registrationConfigured: Boolean(supabase),
     turnstileRequired,

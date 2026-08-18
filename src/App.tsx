@@ -299,7 +299,24 @@ export default function App() {
   useEffect(() => {
     fetch('/api/config')
       .then(r => r.json())
-      .then(data => setConfig(data))
+      .then(data => {
+        setConfig(data);
+        if (data.isPreview === true) {
+          setParentEmail('parent.preview@example.com');
+          setChildrenList([{
+            id: 'child-preview-1',
+            name: 'Niki',
+            nickname: 'Niki',
+            gender: '',
+            birthday: '2021'
+          }]);
+          setSelectedAnimals(['Elephant', 'Rabbit', 'Dolphin', 'Bear', 'Panda']);
+          setSelectedThemes(['Space', 'Fairytale', 'Nature', 'Adventure', 'Magic Ocean']);
+          setSelectedHobbies(['Reading', 'Drawing', 'Puzzles', 'Singing', 'Building Blocks']);
+          setDeliveryTime('19:30');
+          setTimezone('America/New_York');
+        }
+      })
       .catch(e => console.error(e));
 
     // Check query params for checkout success or cancellation
