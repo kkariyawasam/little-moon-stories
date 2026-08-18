@@ -12,11 +12,17 @@ dotenv.config();
 const app = express();
 const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 const isVercel = process.env.VERCEL === '1';
+const isProductionDeployment = isVercel
+  ? process.env.VERCEL_ENV === 'production'
+  : isProd;
 const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
 const manualPayPalPaymentLink = process.env.PAYPAL_PAYMENT_LINK?.trim()
   || 'https://www.paypal.com/ncp/payment/PN3SZACZWV4C6';
 const mockCheckoutEnabled = !isProd && process.env.ALLOW_MOCK_CHECKOUT === 'true';
-const turnstileRequired = isProd || process.env.TURNSTILE_REQUIRED === 'true';
+// Vercel Preview uses NODE_ENV=production but has a changing hostname that is
+// not normally authorized by the production Turnstile widget.
+const turnstileRequired = isProductionDeployment
+  || (!isVercel && process.env.TURNSTILE_REQUIRED === 'true');
 const port = 3000;
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const ADMIN_AUDIO_BUCKET = 'admin-story-audio';
