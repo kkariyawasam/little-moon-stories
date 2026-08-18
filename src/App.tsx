@@ -596,7 +596,7 @@ export default function App() {
     scrollTo('story-builder');
   };
   return (
-    <div className="min-h-screen bg-twilight-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-black relative">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-twilight-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-black relative">
       
       {/* Background Celestial Ambiance - Cozy Night Countryside & Starry Sky Backdrop */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0d1740] via-[#060a26] to-[#030412] pointer-events-none z-0" />
@@ -750,7 +750,7 @@ export default function App() {
       </div>
 
       {/* Main Content Wrap to ensure perfect layered hierarchy over space backdrop so stars never cover text */}
-      <div className="relative z-10 w-full min-h-screen flex flex-col">
+      <div className="relative z-10 w-full max-w-full min-h-screen overflow-x-hidden flex flex-col">
 
       {/* Upper Alerts Banner for Success / Checkout States */}
       {checkoutSuccess && (

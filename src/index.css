@@ -29,6 +29,9 @@
   html {
     scroll-behavior: smooth;
     background-color: var(--color-twilight-950);
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   body {
@@ -36,6 +39,15 @@
     background-color: var(--color-twilight-950);
     overflow-x: hidden;
     min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   img,
@@ -203,11 +215,11 @@
   }
 
   .scroll-reveal.reveal-from-left {
-    transform: translateX(-42px) translateY(18px) rotate(-0.6deg) scale(0.985);
+    transform: translateY(18px) scale(0.985);
   }
 
   .scroll-reveal.reveal-from-right {
-    transform: translateX(42px) translateY(18px) rotate(0.6deg) scale(0.985);
+    transform: translateY(18px) scale(0.985);
   }
 }
 
