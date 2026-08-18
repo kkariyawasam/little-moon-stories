@@ -180,8 +180,9 @@ const getClientIp = (req: Request) => {
 };
 
 const verifyTurnstile = async (token: unknown, remoteIp: string) => {
+  if (!turnstileRequired) return true;
   const secret = process.env.TURNSTILE_SECRET_KEY;
-  if (!secret) return !turnstileRequired;
+  if (!secret) return false;
   if (typeof token !== 'string' || !token || token.length > 2048) return false;
 
   const controller = new AbortController();
