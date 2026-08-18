@@ -35,6 +35,20 @@
     font-family: var(--font-sans);
     background-color: var(--color-twilight-950);
     overflow-x: hidden;
+    min-width: 0;
+  }
+
+  img,
+  video,
+  audio {
+    max-width: 100%;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    max-width: 100%;
   }
 }
 
@@ -174,6 +188,20 @@
 }
 
 @media (max-width: 640px) {
+  /* Prevent iOS Safari from zooming the page when a form field receives focus. */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  button,
+  a,
+  input,
+  select {
+    touch-action: manipulation;
+  }
+
   .scroll-reveal.reveal-from-left {
     transform: translateX(-42px) translateY(18px) rotate(-0.6deg) scale(0.985);
   }
