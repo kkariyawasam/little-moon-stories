@@ -650,7 +650,23 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
   }
 
   const scheduleId = crypto.randomUUID();
-  const deleteAfter = DateTime.utc().plus({ months: ADMIN_AUDIO_RETENTION_MONTHS }).toISO();
+  // Keep the private audio available for a full month after the recipient gets
+  // the email, including when an email is scheduled several weeks ahead.
+  const deleteAfterUtc = clientTime.toUTC().plus({ months: ADMIN_AUDIO_RETENTION_MONTHS });
+  const deleteAfter = deleteAfterUtc.toISO();
+  const linkLifetimeSeconds = Math.ceil(deleteAfterUtc.diff(now, 'seconds').seconds);
+  const { data: signedAudio, error: signedAudioError } = await supabase.storage
+    .from(ADMIN_AUDIO_BUCKET)
+    .createSignedUrl(audioPath, linkLifetimeSeconds, { download: originalFilename.slice(-160) });
+  if (signedAudioError || !signedAudio?.signedUrl) {
+    console.error('Unable to create private story link:', signedAudioError);
+    res.status(500).json({ error: 'Unable to create the private story link.' });
+    return;
+  }
+
+  const storyUrl = signedAudio.signedUrl;
+  const escapedStoryUrl = escapeHtml(storyUrl);
+  const linkExpiryDate = deleteAfterUtc.toFormat('MMMM d, yyyy');
   const { error: insertError } = await supabase.from('admin_scheduled_story_emails').insert({
     id: scheduleId,
     recipient_email: recipient,
@@ -674,8 +690,8 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
       from: 'Cozy Kid Tales <stories@cozykidtales.com>',
       to: [recipient],
       subject,
-      html: `<div style="font-family:Arial,sans-serif;color:#172554"><h2>${escapeHtml(subject)}</h2><p>Your personalized bedtime story is attached as a WAV file.</p><p>Warmly,<br>Cozy Kid Tales</p></div>`,
-      attachments: [{ filename: originalFilename.slice(-160), content: audioBuffer }],
+      html: `<div style="margin:0;background:#f5f3ff;padding:32px 16px;font-family:Arial,sans-serif;color:#172554"><div style="margin:0 auto;max-width:560px;border:1px solid #ddd6fe;border-radius:20px;background:#ffffff;padding:32px;text-align:center;box-shadow:0 8px 24px rgba(30,27,75,.08)"><div style="font-size:34px;line-height:1">&#127769;</div><h1 style="margin:16px 0 8px;font-size:26px;color:#1e1b4b">${escapeHtml(subject)}</h1><p style="margin:0 auto 24px;max-width:420px;font-size:16px;line-height:1.6;color:#475569">A cozy, personalized bedtime adventure is ready to enjoy.</p><a href="${escapedStoryUrl}" style="display:inline-block;border-radius:999px;background:#facc15;padding:15px 26px;color:#172554;font-size:16px;font-weight:700;text-decoration:none">&#9654;&nbsp; Listen to the bedtime story</a><p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#64748b">This private download link expires on ${escapeHtml(linkExpiryDate)}.</p><p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#475569">Sweet dreams,<br><strong>Cozy Kid Tales</strong></p></div></div>`,
+      text: `${subject}\n\nA cozy, personalized bedtime adventure is ready to enjoy.\n\nListen or download your story: ${storyUrl}\n\nThis private link expires on ${linkExpiryDate}.\n\nSweet dreams,\nCozy Kid Tales`,
       scheduledAt,
       tags: [{ name: 'schedule_id', value: scheduleId }]
     }, { idempotencyKey: `admin-story/${scheduleId}` });
