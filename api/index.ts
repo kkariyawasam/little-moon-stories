@@ -39,9 +39,11 @@ const US_TIMEZONES = new Set([
   'America/Anchorage',
   'Pacific/Honolulu'
 ]);
-const ALLOWED_AGE_RANGES = new Set(['3-5', '6-8']);
+const ALLOWED_AGE_RANGES = new Set(['3-4', '5-6', '7-8']);
 const ALLOWED_PAYMENT_PLANS = new Set(['monthly', 'free_trial']);
 const REQUIRED_STORY_CHOICES = 5;
+const MONTHLY_PLAN_PRICE_USD = '9.00';
+const MONTHLY_PLAN_STORY_COUNT = 30;
 const SAFE_NICKNAME_PATTERN = /^[\p{L}\p{M}\p{N} .'-]+$/u;
 const SAFE_PREFERENCE_PATTERN = /^[\p{L}\p{M}\p{N} &'()/-]+$/u;
 const UNSAFE_TEXT_PATTERN = /[<>\u0000-\u001F\u007F]|(?:javascript\s*:)|(?:https?:\/\/)|(?:www\.)/iu;
@@ -314,20 +316,11 @@ const normalizeChildren = (children: unknown): ChildDetail[] => {
 
     const record = child as Record<string, unknown>;
     const nickname = normalizeSafeText(record.nickname || record.name, `Child #${index + 1} nickname`, 40, SAFE_NICKNAME_PATTERN);
-    const birthYear = cleanText(record.birthday, '', 4);
-    if (!/^\d{4}$/.test(birthYear)) throw new Error(`Child #${index + 1} birth year is invalid.`);
-
-    const numericBirthYear = Number(birthYear);
-    const currentYear = new Date().getUTCFullYear();
-    if (numericBirthYear > currentYear || numericBirthYear < currentYear - 20) {
-      throw new Error(`Child #${index + 1} birth year is outside the allowed range.`);
-    }
-
     return {
       name: nickname,
       nickname,
       gender: 'not_provided',
-      birthday: birthYear
+      birthday: ''
     };
   });
 };
@@ -366,7 +359,7 @@ interface Subscriber {
   id: string;
   parent_email: string;
   child_names: string;
-  age_range: '3-5' | '6-8';
+  age_range: '3-4' | '5-6' | '7-8';
   delivery_time: string;
   timezone: string;
   preferred_theme: string;
@@ -385,7 +378,7 @@ const mockSubscribers: Subscriber[] = [
     id: '1',
     parent_email: 'parent.demo@example.com',
     child_names: 'Mia',
-    age_range: '3-5',
+    age_range: '3-4',
     delivery_time: '19:30',
     timezone: 'America/New_York',
     preferred_theme: 'Friendship & Nature',
@@ -401,7 +394,7 @@ const mockSubscribers: Subscriber[] = [
     id: '2',
     parent_email: 'family.demo@example.com',
     child_names: 'Noah',
-    age_range: '6-8',
+    age_range: '7-8',
     delivery_time: '20:15',
     timezone: 'America/Los_Angeles',
     preferred_theme: 'magic space adventures',
@@ -547,7 +540,7 @@ app.post('/api/admin/audio-upload-url', requireAdmin, async (req: Request, res: 
   }
 
   const { filename, contentType, size } = req.body || {};
-  if (typeof filename !== 'string' || filename.length > 160 || !/^[a-zA-Z0-9 ._-]+\.wav$/i.test(filename) || !['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(contentType) || !Number.isInteger(size) || size <= 0 || size > MAX_WAV_BYTES) {
+  if (typeof filename !== 'string' || filename.length > 160 || !/^[a-zA-Z0-9 ._-]+\.wav$/i.test(filename) || contentType !== 'audio/wav' || !Number.isInteger(size) || size <= 0 || size > MAX_WAV_BYTES) {
     res.status(400).json({ error: 'Choose one WAV file no larger than 25 MB.' });
     return;
   }
@@ -678,10 +671,10 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
 
   try {
     const result = await resend.emails.send({
-      from: 'Little Moon Stories <stories@cozykidtales.com>',
+      from: 'Cozy Kid Tales <stories@cozykidtales.com>',
       to: [recipient],
       subject,
-      html: `<div style="font-family:Arial,sans-serif;color:#172554"><h2>${escapeHtml(subject)}</h2><p>Your personalized bedtime story is attached as a WAV file.</p><p>Warmly,<br>Little Moon Stories</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;color:#172554"><h2>${escapeHtml(subject)}</h2><p>Your personalized bedtime story is attached as a WAV file.</p><p>Warmly,<br>Cozy Kid Tales</p></div>`,
       attachments: [{ filename: originalFilename.slice(-160), content: audioBuffer }],
       scheduledAt,
       tags: [{ name: 'schedule_id', value: scheduleId }]
@@ -885,7 +878,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
   let normalizedTheme: string;
   let normalizedHobby: string;
   let normalizedAnimal: string;
-  let normalizedAgeRange: '3-5' | '6-8';
+  let normalizedAgeRange: '3-4' | '5-6' | '7-8';
   let requestedPlan: 'monthly' | 'free_trial';
   try {
     if (!isValidEmail(normalizedEmailForLimit)) throw new Error('Please provide a valid parent email.');
@@ -899,7 +892,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     normalizedTheme = normalizePreferenceList(preferred_theme, 'Theme');
     normalizedHobby = normalizePreferenceList(favorite_hobby, 'Hobby');
     normalizedAnimal = normalizePreferenceList(favorite_animal, 'Animal');
-    normalizedAgeRange = age_range as '3-5' | '6-8';
+    normalizedAgeRange = age_range as '3-4' | '5-6' | '7-8';
     requestedPlan = body.plan_type as 'monthly' | 'free_trial';
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Invalid signup details.' });
@@ -988,7 +981,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
           subscriber_id: parseInt(finalSubscriberId, 10),
           nickname: c.name || c.nickname,
           gender: c.gender,
-          birthday: c.birthday
+          birthday: c.birthday || null
         }));
 
         const { error: childError } = await supabase
@@ -1046,11 +1039,28 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
               purchase_units: [
                 {
                   reference_id: finalSubscriberId,
-                  description: 'Cozy Kid Tales - Premium Personalized Subscription (1 Month)',
+                  description: `${MONTHLY_PLAN_STORY_COUNT} nightly personalized stories - one-time $${MONTHLY_PLAN_PRICE_USD} payment for 30 days`,
                   amount: {
                     currency_code: 'USD',
-                    value: '9.00'
-                  }
+                    value: MONTHLY_PLAN_PRICE_USD,
+                    breakdown: {
+                      item_total: {
+                        currency_code: 'USD',
+                        value: MONTHLY_PLAN_PRICE_USD
+                      }
+                    }
+                  },
+                  items: [
+                    {
+                      name: 'Cozy Kid Tales 30-Day Story Plan',
+                      description: `${MONTHLY_PLAN_STORY_COUNT} nightly personalized stories`,
+                      quantity: '1',
+                      unit_amount: {
+                        currency_code: 'USD',
+                        value: MONTHLY_PLAN_PRICE_USD
+                      }
+                    }
+                  ]
                 }
               ],
               application_context: {
@@ -1210,7 +1220,7 @@ app.get('/api/paypal-checkout-success', async (req: Request, res: Response): Pro
     const paymentIsValid = captureData.status === 'COMPLETED'
       && capture?.status === 'COMPLETED'
       && capturedAmount?.currency_code === 'USD'
-      && capturedAmount?.value === '9.00';
+      && capturedAmount?.value === MONTHLY_PLAN_PRICE_USD;
 
     if (String(referenceId) !== subId || !paymentIsValid) {
       console.error('PayPal capture verification failed.', {

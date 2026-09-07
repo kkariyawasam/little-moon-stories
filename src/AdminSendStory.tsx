@@ -142,7 +142,7 @@ export default function AdminSendStory() {
       setAudioFile(null);
       return;
     }
-    if (!/\.wav$/i.test(file.name) || !['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(file.type) || file.size > MAX_WAV_BYTES || file.size === 0) {
+    if (!/\.wav$/i.test(file.name) || file.size > MAX_WAV_BYTES || file.size === 0) {
       setAudioFile(null);
       setError('Choose a WAV file no larger than 25 MB.');
       return;
@@ -170,7 +170,7 @@ export default function AdminSendStory() {
         bucket: string; path: string; token: string; supabaseUrl: string; supabaseAnonKey: string;
       }>('/api/admin/audio-upload-url', {
         method: 'POST',
-        body: JSON.stringify({ filename: audioFile.name, contentType: audioFile.type, size: audioFile.size })
+        body: JSON.stringify({ filename: audioFile.name, contentType: 'audio/wav', size: audioFile.size })
       });
       uploadedPath = upload.path;
 
@@ -219,7 +219,7 @@ export default function AdminSendStory() {
         <header className="mb-7 flex items-center justify-between gap-4">
           <a href="/" className="flex items-center gap-3 text-white">
             <img src="/cozy-kid-tales-icon.svg" alt="" className="h-11 w-11 rounded-xl" />
-            <div><span className="block font-kids text-2xl leading-none">Little Moon Stories</span><span className="text-[10px] uppercase tracking-widest text-indigo-200">Private delivery desk</span></div>
+            <div><span className="block font-kids text-2xl leading-none">Cozy Kid Tales</span><span className="text-[10px] uppercase tracking-widest text-indigo-200">Private delivery desk</span></div>
           </a>
           {authenticated && <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-indigo-300/25 px-3 py-2 text-xs font-bold text-indigo-100 hover:border-amber-300/50"><LogOut size={15} /> Log out</button>}
         </header>
