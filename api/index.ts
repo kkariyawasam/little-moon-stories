@@ -781,7 +781,7 @@ app.get('/api/admin/story-email-logs', requireAdmin, async (_req: Request, res: 
     .from('admin_scheduled_story_emails')
     .select('id,recipient_email,subject,client_local_time,client_timezone,scheduled_at_utc,resend_email_id,status,error_message,updated_at')
     .order('created_at', { ascending: false })
-    .limit(25);
+    .limit(1);
   if (error) {
     res.status(500).json({ error: 'Unable to load delivery logs.' });
     return;

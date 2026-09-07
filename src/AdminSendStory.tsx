@@ -13,6 +13,35 @@ const TIMEZONES = [
   ['Pacific/Honolulu', 'Hawaii Time (Honolulu)']
 ] as const;
 
+const DELIVERY_TIME_OPTIONS = [
+  ['15:00', '3:00 PM'],
+  ['15:30', '3:30 PM'],
+  ['16:00', '4:00 PM'],
+  ['16:30', '4:30 PM'],
+  ['17:00', '5:00 PM'],
+  ['17:30', '5:30 PM'],
+  ['18:00', '6:00 PM'],
+  ['18:30', '6:30 PM'],
+  ['19:00', '7:00 PM'],
+  ['19:30', '7:30 PM'],
+  ['20:00', '8:00 PM'],
+  ['20:30', '8:30 PM'],
+  ['21:00', '9:00 PM'],
+  ['21:30', '9:30 PM'],
+  ['22:00', '10:00 PM'],
+  ['22:30', '10:30 PM'],
+  ['23:00', '11:00 PM'],
+  ['23:30', '11:30 PM']
+] as const;
+
+const getTodayDateValue = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 type DeliveryLog = {
   id: string;
   recipient_email: string;
@@ -63,7 +92,7 @@ export default function AdminSendStory() {
   const [recipient, setRecipient] = useState('');
   const [subject, setSubject] = useState('Your Cozy Bedtime Story');
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState(getTodayDateValue);
   const [deliveryTime, setDeliveryTime] = useState('19:30');
   const [timezone, setTimezone] = useState('America/New_York');
   const [busy, setBusy] = useState(false);
@@ -72,7 +101,7 @@ export default function AdminSendStory() {
   const [logs, setLogs] = useState<DeliveryLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
-  const minimumDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const minimumDate = useMemo(getTodayDateValue, []);
 
   const loadLogs = useCallback(async () => {
     setLoadingLogs(true);
@@ -196,7 +225,7 @@ export default function AdminSendStory() {
       setReceipt(result);
       setRecipient('');
       setAudioFile(null);
-      setDeliveryDate('');
+      setDeliveryDate(minimumDate);
       uploadedPath = '';
       await loadLogs();
     } catch (scheduleError) {
@@ -245,7 +274,7 @@ export default function AdminSendStory() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-1">Subject<input required maxLength={200} value={subject} onChange={event => setSubject(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-2">WAV story file<span className="mt-1.5 flex min-h-24 cursor-pointer items-center justify-center rounded-xl border border-dashed border-indigo-300/35 bg-indigo-300/5 px-4 text-center hover:border-amber-300/60"><input type="file" accept=".wav,audio/wav,audio/x-wav" required className="sr-only" onChange={event => chooseAudio(event.target.files?.[0] || null)} /><span className="flex flex-col items-center gap-1 text-sm normal-case tracking-normal text-slate-200">{audioFile ? <><FileAudio className="text-amber-300" /><strong>{audioFile.name}</strong><span className="text-xs text-slate-400">{(audioFile.size / 1024 / 1024).toFixed(1)} MB</span></> : <><Upload className="text-indigo-300" /><strong>Choose a WAV file</strong><span className="text-xs text-slate-400">Maximum 25 MB</span></>}</span></span></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200">Client delivery date<input type="date" required min={minimumDate} value={deliveryDate} onChange={event => setDeliveryDate(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
-                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200">Client delivery time<input type="time" required value={deliveryTime} onChange={event => setDeliveryTime(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200">Client delivery time<select required value={deliveryTime} onChange={event => setDeliveryTime(event.target.value)} className="mt-1.5 w-full cursor-pointer rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300">{DELIVERY_TIME_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-2">Client U.S. time zone<select required value={timezone} onChange={event => setTimezone(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300">{TIMEZONES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                 {error && <p role="alert" className="rounded-lg border border-rose-300/30 bg-rose-300/10 p-3 text-sm text-rose-100 sm:col-span-2">{error}</p>}
                 <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-3 font-bold text-slate-950 hover:bg-amber-200 disabled:opacity-60 sm:col-span-2">{busy ? <><Loader2 className="animate-spin" size={18} /> Uploading and scheduling...</> : <><Send size={18} /> Schedule Email</>}</button>

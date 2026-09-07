@@ -111,6 +111,27 @@ const USA_TIMEZONES = [
   { value: "Pacific/Honolulu", label: "Hawaii Time (HT/Honolulu)" },
 ];
 
+const BEDTIME_OPTIONS = [
+  { value: "15:00", label: "3:00 PM" },
+  { value: "15:30", label: "3:30 PM" },
+  { value: "16:00", label: "4:00 PM" },
+  { value: "16:30", label: "4:30 PM" },
+  { value: "17:00", label: "5:00 PM" },
+  { value: "17:30", label: "5:30 PM" },
+  { value: "18:00", label: "6:00 PM" },
+  { value: "18:30", label: "6:30 PM" },
+  { value: "19:00", label: "7:00 PM" },
+  { value: "19:30", label: "7:30 PM" },
+  { value: "20:00", label: "8:00 PM" },
+  { value: "20:30", label: "8:30 PM" },
+  { value: "21:00", label: "9:00 PM" },
+  { value: "21:30", label: "9:30 PM" },
+  { value: "22:00", label: "10:00 PM" },
+  { value: "22:30", label: "10:30 PM" },
+  { value: "23:00", label: "11:00 PM" },
+  { value: "23:30", label: "11:30 PM" },
+];
+
 const getTzAbbreviation = (tz: string) => {
   try {
     const formatter = new Intl.DateTimeFormat("en-US", {
@@ -2051,15 +2072,23 @@ export default function App() {
                           <label className="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1.5">
                             Delivery Time
                           </label>
-                          <input
-                            type="time"
+                          <select
                             required
                             value={deliveryTime}
                             onChange={(event) =>
                               setDeliveryTime(event.target.value)
                             }
-                            className="w-full px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400"
-                          />
+                            className="w-full px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 cursor-pointer"
+                          >
+                            <option value="" disabled>
+                              Select bedtime
+                            </option>
+                            {BEDTIME_OPTIONS.map((time) => (
+                              <option key={time.value} value={time.value}>
+                                {time.label}
+                              </option>
+                            ))}
+                          </select>
                           {!deliveryTimeComplete && (
                             <p className="mt-1.5 text-[10px] text-amber-200">
                               Required
@@ -2615,12 +2644,17 @@ export default function App() {
                         </label>
                         <div className="relative">
                           <Clock className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
-                          <input
-                            type="time"
+                          <select
                             value={deliveryTime}
                             onChange={(e) => setDeliveryTime(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-xs focus:outline-none focus:border-indigo-400 text-slate-100 font-mono"
-                          />
+                            className="w-full pl-9 pr-3 py-2 bg-[#05060d] border border-[#212752] rounded-xl text-xs focus:outline-none focus:border-indigo-400 text-slate-100 font-mono cursor-pointer"
+                          >
+                            {BEDTIME_OPTIONS.map((time) => (
+                              <option key={time.value} value={time.value}>
+                                {time.label}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                       </div>
 
