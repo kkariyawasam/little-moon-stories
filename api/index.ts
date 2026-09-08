@@ -16,7 +16,7 @@ const isProductionDeployment = isVercel
   ? process.env.VERCEL_ENV === 'production'
   : isProd;
 const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
-const mockCheckoutEnabled = !isProd && process.env.ALLOW_MOCK_CHECKOUT === 'true';
+const mockCheckoutEnabled = !isProductionDeployment && process.env.ALLOW_MOCK_CHECKOUT === 'true';
 // Vercel Preview uses NODE_ENV=production but has a changing hostname that is
 // not normally authorized by the production Turnstile widget.
 const turnstileRequired = isProductionDeployment
@@ -942,6 +942,7 @@ app.get('/api/payment-confirmation', async (req: Request, res: Response): Promis
 
 // Subscriber action endpoint (Signup + optional payment handler)
 app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   if (!isSameOrigin(req)) {
     res.status(403).json({ error: 'Invalid request origin.' });
     return;
@@ -1013,7 +1014,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
-  if (requestedPlan === 'monthly' && !checkoutEnabled) {
+  if (requestedPlan === 'monthly' && !checkoutEnabled && !mockCheckoutEnabled) {
     res.status(503).json({ error: 'Secure checkout is temporarily unavailable. Please try again later.' });
     return;
   }
@@ -1129,16 +1130,18 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
 
     // Free stories do not enter the paid checkout flow.
     if (requestedPlan === 'free_trial') {
-      res.json({
-        registered: true,
-        subscriberId: finalSubscriberId,
-        planType: requestedPlan,
-        paymentStatus: 'unpaid'
-      });
+      res.json({ registered: true });
       return;
     }
 
-    // 3. PayPal Integration
+    // 3. Preview/local mock checkout. This path is impossible in production.
+    if (!checkoutEnabled && mockCheckoutEnabled) {
+      const mockRedirectUrl = `/api/mock-checkout-success?session_id=pay_mock_${finalSubscriberId}&sub_id=${finalSubscriberId}`;
+      res.json({ checkoutSessionUrl: mockRedirectUrl });
+      return;
+    }
+
+    // 4. PayPal Integration
     {
       const redirectBase = process.env.APP_URL || `http://localhost:${port}`;
       const accessToken = await getPayPalAccessToken();
@@ -1219,10 +1222,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
           }
 
           res.json({
-            checkoutSessionUrl: approveLink,
-            subscriberId: finalSubscriberId,
-            planType: 'monthly',
-            isMock: false
+            checkoutSessionUrl: approveLink
           });
         } catch (payPayPalErr: any) {
           console.error('PayPal api failed or got rate-limited. Falling back to simulation.', payPayPalErr);
@@ -1232,10 +1232,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
           }
           const mockRedirectUrl = `/api/mock-checkout-success?session_id=pay_mock_${finalSubscriberId}&sub_id=${finalSubscriberId}`;
           res.json({
-            checkoutSessionUrl: mockRedirectUrl,
-            subscriberId: finalSubscriberId,
-            planType: 'monthly',
-            isMock: true
+            checkoutSessionUrl: mockRedirectUrl
           });
         }
       } else {
@@ -1246,10 +1243,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
         // Fallback: Create simulated mock PayPal checkout URL for local developer sandbox
         const mockRedirectUrl = `/api/mock-checkout-success?session_id=pay_mock_${finalSubscriberId}&sub_id=${finalSubscriberId}`;
         res.json({
-          checkoutSessionUrl: mockRedirectUrl,
-          subscriberId: finalSubscriberId,
-          planType: 'monthly',
-          isMock: true
+          checkoutSessionUrl: mockRedirectUrl
         });
       }
     }

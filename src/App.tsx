@@ -753,7 +753,7 @@ export default function App() {
             text:
               requestedPlan === "monthly"
                 ? "Your plan was saved, but secure checkout did not start. Please try again."
-                : "Your free story request was saved. You will receive one personalized story tomorrow at your selected time.",
+                : "Your free story request was saved. If your selected bedtime is at least 4 hours away, it will arrive today. Otherwise, it will arrive tomorrow at your selected time.",
           });
           if (requestedPlan === "monthly") {
             setSignupMessage({
