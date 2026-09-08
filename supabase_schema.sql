@@ -69,6 +69,51 @@ CREATE TABLE IF NOT EXISTS public.delivery_attempts (
   attempted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Atomic rate limiting shared by all production serverless instances.
+-- The app creates keyed digests of identifiers before writing them here.
+CREATE TABLE IF NOT EXISTS public.api_rate_limits (
+  rate_key TEXT PRIMARY KEY,
+  bucket_start TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0)
+);
+
+CREATE OR REPLACE FUNCTION public.check_rate_limit(
+  p_rate_key TEXT,
+  p_limit INTEGER,
+  p_window_seconds INTEGER
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  current_count INTEGER;
+BEGIN
+  IF p_rate_key IS NULL OR length(p_rate_key) <> 64
+     OR p_limit < 1 OR p_window_seconds < 1 THEN
+    RAISE EXCEPTION 'Invalid rate-limit parameters';
+  END IF;
+
+  INSERT INTO public.api_rate_limits (rate_key, bucket_start, attempt_count)
+  VALUES (p_rate_key, now(), 1)
+  ON CONFLICT (rate_key) DO UPDATE
+  SET attempt_count = CASE
+        WHEN api_rate_limits.bucket_start <= now() - make_interval(secs => p_window_seconds)
+          THEN 1
+        ELSE api_rate_limits.attempt_count + 1
+      END,
+      bucket_start = CASE
+        WHEN api_rate_limits.bucket_start <= now() - make_interval(secs => p_window_seconds)
+          THEN now()
+        ELSE api_rate_limits.bucket_start
+      END
+  RETURNING attempt_count INTO current_count;
+
+  RETURN current_count > p_limit;
+END;
+$$;
+
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'story-audio',
@@ -216,7 +261,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.enqueue_signup_story_job(
   p_subscriber_id BIGINT,
-  p_minimum_lead_time INTERVAL DEFAULT interval '5 hours'
+  p_minimum_lead_time INTERVAL DEFAULT interval '4 hours'
 )
 RETURNS UUID
 LANGUAGE plpgsql
@@ -277,7 +322,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.enqueue_signup_story_job_with_message(
   p_subscriber_id BIGINT,
-  p_minimum_lead_time INTERVAL DEFAULT interval '5 hours'
+  p_minimum_lead_time INTERVAL DEFAULT interval '4 hours'
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -610,6 +655,7 @@ ALTER TABLE public.children ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.story_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.story_audio ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.delivery_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_rate_limits ENABLE ROW LEVEL SECURITY;
 
 -- Parents do not connect directly to Supabase in the current architecture.
 -- Trusted app-server and Edge Function clients use service_role, which bypasses
@@ -619,6 +665,7 @@ REVOKE ALL PRIVILEGES ON TABLE public.children FROM PUBLIC, anon, authenticated;
 REVOKE ALL PRIVILEGES ON TABLE public.story_jobs FROM PUBLIC, anon, authenticated;
 REVOKE ALL PRIVILEGES ON TABLE public.story_audio FROM PUBLIC, anon, authenticated;
 REVOKE ALL PRIVILEGES ON TABLE public.delivery_attempts FROM PUBLIC, anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.api_rate_limits FROM PUBLIC, anon, authenticated;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, anon, authenticated;
 
 REVOKE UPDATE (
@@ -645,6 +692,7 @@ REVOKE EXECUTE ON FUNCTION public.mark_story_generation_failed(UUID, TEXT, BOOLE
 REVOKE EXECUTE ON FUNCTION public.claim_ready_story_deliveries(INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.mark_story_delivery_sent(UUID, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.mark_story_delivery_failed(UUID, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.check_rate_limit(TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.enqueue_tomorrow_story_jobs() TO service_role;
 GRANT EXECUTE ON FUNCTION public.enqueue_signup_story_job(BIGINT, INTERVAL) TO service_role;
@@ -654,6 +702,7 @@ GRANT EXECUTE ON FUNCTION public.mark_story_generation_failed(UUID, TEXT, BOOLEA
 GRANT EXECUTE ON FUNCTION public.claim_ready_story_deliveries(INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_story_delivery_sent(UUID, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_story_delivery_failed(UUID, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.check_rate_limit(TEXT, INTEGER, INTEGER) TO service_role;
 
 -- Private admin-scheduled story emails and verified Resend delivery events.
 CREATE TABLE IF NOT EXISTS public.admin_scheduled_story_emails (

@@ -748,25 +748,17 @@ export default function App() {
           // Redirect to PayPal checkout
           window.location.href = data.checkoutSessionUrl;
         } else if (data.registered) {
-          const paymentLink =
-            typeof config.paypalPaymentLink === "string"
-              ? config.paypalPaymentLink
-              : "";
           setSignupMessage({
             type: "success",
             text:
               requestedPlan === "monthly"
-                ? "Your 30-day plan request was saved. Continue to PayPal to complete the one-time $9 payment."
+                ? "Your plan was saved, but secure checkout did not start. Please try again."
                 : "Your free story request was saved. You will receive one personalized story tomorrow at your selected time.",
           });
           if (requestedPlan === "monthly") {
-            if (paymentLink.startsWith("https://www.paypal.com/")) {
-              window.location.assign(paymentLink);
-              return;
-            }
             setSignupMessage({
               type: "error",
-              text: "Your story plan was saved, but the payment page is temporarily unavailable. Please contact us before paying.",
+              text: "Secure checkout did not start. You have not been charged; please try again.",
             });
             setBuilderStep(builderSteps.length - 1);
             setShowStoryBuilderModal(true);
@@ -989,7 +981,7 @@ export default function App() {
                 <span>
                   Payment successful! Your Cozy Kid Tales 30-day plan is
                   active. Your $9 payment includes 30 nightly stories. If your
-                  selected bedtime is at least 2 hours from now, we will prepare
+                  selected bedtime is at least 4 hours from now, we will prepare
                   and send your first story tonight. Otherwise, your first story
                   will arrive tomorrow at your chosen bedtime.
                 </span>

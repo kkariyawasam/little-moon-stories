@@ -16,8 +16,6 @@ const isProductionDeployment = isVercel
   ? process.env.VERCEL_ENV === 'production'
   : isProd;
 const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
-const manualPayPalPaymentLink = process.env.PAYPAL_PAYMENT_LINK?.trim()
-  || 'https://www.paypal.com/ncp/payment/PN3SZACZWV4C6';
 const mockCheckoutEnabled = !isProd && process.env.ALLOW_MOCK_CHECKOUT === 'true';
 // Vercel Preview uses NODE_ENV=production but has a changing hostname that is
 // not normally authorized by the production Turnstile widget.
@@ -26,9 +24,11 @@ const turnstileRequired = isProductionDeployment
 const port = 3000;
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const ADMIN_AUDIO_BUCKET = 'admin-story-audio';
+const STORY_AUDIO_BUCKET = 'story-audio';
 const ADMIN_COOKIE = 'cozy_admin_session';
 const MAX_WAV_BYTES = 25 * 1024 * 1024;
 const ADMIN_AUDIO_RETENTION_MONTHS = 1;
+const STORY_AUDIO_RETENTION_DAYS = 30;
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const US_TIMEZONES = new Set([
   'America/New_York',
@@ -48,9 +48,11 @@ const SAFE_NICKNAME_PATTERN = /^[\p{L}\p{M}\p{N} .'-]+$/u;
 const SAFE_PREFERENCE_PATTERN = /^[\p{L}\p{M}\p{N} &'()/-]+$/u;
 const UNSAFE_TEXT_PATTERN = /[<>\u0000-\u001F\u007F]|(?:javascript\s*:)|(?:https?:\/\/)|(?:www\.)/iu;
 const ADMIN_AUDIO_PATH_PATTERN = /^\d{4}-\d{2}-\d{2}\/[a-f0-9-]{36}-[a-zA-Z0-9._-]+\.wav$/;
+const STORY_AUDIO_PATH_PATTERN = /^stories\/[a-f0-9-]{36}\.(?:mp3|wav)$/;
 
+let supabase: any = null;
 const signupAttempts = new Map<string, number[]>();
-const isRateLimited = (key: string, limit: number, windowMs: number) => {
+const isRateLimitedLocally = (key: string, limit: number, windowMs: number) => {
   const now = Date.now();
   const recent = (signupAttempts.get(key) || []).filter(timestamp => now - timestamp < windowMs);
   if (recent.length >= limit) {
@@ -60,6 +62,27 @@ const isRateLimited = (key: string, limit: number, windowMs: number) => {
   recent.push(now);
   signupAttempts.set(key, recent);
   return false;
+};
+
+const isRateLimited = async (key: string, limit: number, windowMs: number) => {
+  if (!isProductionDeployment) return isRateLimitedLocally(key, limit, windowMs);
+  if (!supabase) return true;
+
+  // Store only a keyed digest, never a raw IP address or customer email. The
+  // HMAC also prevents offline guessing if the rate-limit table is exposed.
+  const rateLimitSecret = process.env.RATE_LIMIT_SECRET;
+  if (!rateLimitSecret || rateLimitSecret.length < 32) return true;
+  const rateKey = crypto.createHmac('sha256', rateLimitSecret).update(key).digest('hex');
+  const { data, error } = await supabase.rpc('check_rate_limit', {
+    p_rate_key: rateKey,
+    p_limit: limit,
+    p_window_seconds: Math.ceil(windowMs / 1000)
+  });
+  if (error) {
+    console.error('Persistent rate-limit check failed:', error);
+    return true;
+  }
+  return data === true;
 };
 
 const parseCookies = (req: Request) => Object.fromEntries(
@@ -207,7 +230,6 @@ const verifyTurnstile = async (token: unknown, remoteIp: string) => {
 };
 
 // Initialize clients conditionally to prevent startup crashes if keys are missing
-let supabase: any = null;
 if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
   supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
@@ -332,7 +354,8 @@ const enqueueSignupStoryJob = async (subscriberId: unknown) => {
   if (!Number.isInteger(numericSubscriberId)) return;
 
   const { data, error } = await supabase.rpc('enqueue_signup_story_job', {
-    p_subscriber_id: numericSubscriberId
+    p_subscriber_id: numericSubscriberId,
+    p_minimum_lead_time: '4 hours'
   });
 
   if (error) {
@@ -489,7 +512,7 @@ app.post('/api/admin/login', async (req: Request, res: Response): Promise<void> 
   }
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(`admin-login:${clientIp}`, 5, 15 * 60 * 1000)) {
+  if (await isRateLimited(`admin-login:${clientIp}`, 5, 15 * 60 * 1000)) {
     res.setHeader('Retry-After', '900');
     res.status(429).json({ error: 'Too many login attempts. Try again in 15 minutes.' });
     return;
@@ -591,7 +614,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
   }
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(`admin-schedule:${clientIp}`, 30, 60 * 60 * 1000)) {
+  if (await isRateLimited(`admin-schedule:${clientIp}`, 30, 60 * 60 * 1000)) {
     res.setHeader('Retry-After', '3600');
     res.status(429).json({ error: 'Too many scheduling requests. Try again later.' });
     return;
@@ -599,6 +622,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
 
   const recipient = normalizeEmail(req.body?.recipient);
   const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim().replace(/\s+/g, ' ') : '';
+  const storyDay = Number(req.body?.storyDay);
   const localDateTime = typeof req.body?.localDateTime === 'string' ? req.body.localDateTime : '';
   const timezone = typeof req.body?.timezone === 'string' ? req.body.timezone : '';
   const audioPath = typeof req.body?.audioPath === 'string' ? req.body.audioPath : '';
@@ -609,6 +633,9 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     || !subject
     || subject.length > 120
     || UNSAFE_TEXT_PATTERN.test(subject)
+    || !Number.isInteger(storyDay)
+    || storyDay < 1
+    || storyDay > 30
     || !US_TIMEZONES.has(timezone)
     || !/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(localDateTime)
     || !ADMIN_AUDIO_PATH_PATTERN.test(audioPath)
@@ -616,7 +643,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     || originalFilename.length > 160
     || !/^[a-zA-Z0-9 ._-]+\.wav$/i.test(originalFilename)
   ) {
-    res.status(400).json({ error: 'Please check the recipient, subject, WAV file, date, time, and U.S. time zone.' });
+    res.status(400).json({ error: 'Please check the recipient, story day, subject, WAV file, date, time, and U.S. time zone.' });
     return;
   }
 
@@ -667,10 +694,11 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
   const storyUrl = signedAudio.signedUrl;
   const escapedStoryUrl = escapeHtml(storyUrl);
   const linkExpiryDate = deleteAfterUtc.toFormat('MMMM d, yyyy');
+  const emailSubject = `Day ${storyDay} of 30 — ${subject}`;
   const { error: insertError } = await supabase.from('admin_scheduled_story_emails').insert({
     id: scheduleId,
     recipient_email: recipient,
-    subject,
+    subject: emailSubject,
     client_local_time: clientTime.toISO({ includeOffset: false }),
     client_timezone: timezone,
     scheduled_at_utc: scheduledAt,
@@ -689,9 +717,9 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     const result = await resend.emails.send({
       from: 'Cozy Kid Tales <stories@cozykidtales.com>',
       to: [recipient],
-      subject,
-      html: `<div style="margin:0;background:#f5f3ff;padding:32px 16px;font-family:Arial,sans-serif;color:#172554"><div style="margin:0 auto;max-width:560px;border:1px solid #ddd6fe;border-radius:20px;background:#ffffff;padding:32px;text-align:center;box-shadow:0 8px 24px rgba(30,27,75,.08)"><div style="font-size:34px;line-height:1">&#127769;</div><h1 style="margin:16px 0 8px;font-size:26px;color:#1e1b4b">${escapeHtml(subject)}</h1><p style="margin:0 auto 24px;max-width:420px;font-size:16px;line-height:1.6;color:#475569">A cozy, personalized bedtime adventure is ready to enjoy.</p><a href="${escapedStoryUrl}" style="display:inline-block;border-radius:999px;background:#facc15;padding:15px 26px;color:#172554;font-size:16px;font-weight:700;text-decoration:none">&#9654;&nbsp; Listen to the bedtime story</a><p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#64748b">This private story link expires on ${escapeHtml(linkExpiryDate)}.</p><p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#475569">Sweet dreams,<br><strong>Cozy Kid Tales</strong></p></div></div>`,
-      text: `${subject}\n\nA cozy, personalized bedtime adventure is ready to enjoy.\n\nListen to your story: ${storyUrl}\n\nThis private link expires on ${linkExpiryDate}.\n\nSweet dreams,\nCozy Kid Tales`,
+      subject: emailSubject,
+      html: `<div style="margin:0;background:#f5f3ff;padding:32px 16px;font-family:Arial,sans-serif;color:#172554"><div style="margin:0 auto;max-width:560px;border:1px solid #ddd6fe;border-radius:20px;background:#ffffff;padding:32px;text-align:center;box-shadow:0 8px 24px rgba(30,27,75,.08)"><div style="font-size:34px;line-height:1">&#127769;</div><p style="display:inline-block;margin:16px 0 4px;border-radius:999px;background:#fef3c7;padding:7px 14px;color:#92400e;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase">Story Day ${storyDay} of 30</p><h1 style="margin:12px 0 8px;font-size:26px;color:#1e1b4b">${escapeHtml(subject)}</h1><p style="margin:0 auto 24px;max-width:420px;font-size:16px;line-height:1.6;color:#475569">Your Day ${storyDay} personalized bedtime adventure is ready to enjoy.</p><a href="${escapedStoryUrl}" style="display:inline-block;border-radius:999px;background:#facc15;padding:15px 26px;color:#172554;font-size:16px;font-weight:700;text-decoration:none">&#9654;&nbsp; Listen to the bedtime story</a><p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#64748b">This private story link expires on ${escapeHtml(linkExpiryDate)}.</p><p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#475569">Sweet dreams,<br><strong>Cozy Kid Tales</strong></p></div></div>`,
+      text: `Story Day ${storyDay} of 30\n\n${subject}\n\nYour Day ${storyDay} personalized bedtime adventure is ready to enjoy.\n\nListen to your story: ${storyUrl}\n\nThis private link expires on ${linkExpiryDate}.\n\nSweet dreams,\nCozy Kid Tales`,
       scheduledAt,
       tags: [{ name: 'schedule_id', value: scheduleId }]
     }, { idempotencyKey: `admin-story/${scheduleId}` });
@@ -711,7 +739,8 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
       timezone,
       scheduledAtUtc: scheduledAt,
       resendEmailId: result.data.id,
-      status: 'scheduled'
+      status: 'scheduled',
+      storyDay
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to schedule the email.';
@@ -724,7 +753,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
 app.get('/api/admin/cleanup-audio', async (req: Request, res: Response): Promise<void> => {
   const cronSecret = process.env.CRON_SECRET;
   const authorization = req.header('authorization');
-  if (!timingSafeStringEqual(authorization, cronSecret ? `Bearer ${cronSecret}` : undefined)) {
+  if (!cronSecret || cronSecret.length < 32 || !timingSafeStringEqual(authorization, `Bearer ${cronSecret}`)) {
     res.status(401).json({ error: 'Invalid cleanup authorization.' });
     return;
   }
@@ -769,7 +798,77 @@ app.get('/api/admin/cleanup-audio', async (req: Request, res: Response): Promise
     deletedCount += 1;
   }
 
-  res.json({ checked: expired?.length || 0, deleted_count: deletedCount, failed_ids: failures });
+  const storyCutoff = DateTime.utc().minus({ days: STORY_AUDIO_RETENTION_DAYS }).toISO();
+  const { data: expiredStoryJobs, error: storyJobsError } = await supabase
+    .from('story_jobs')
+    .select('id')
+    .not('sent_at', 'is', null)
+    .lte('sent_at', storyCutoff)
+    .limit(100);
+  if (storyJobsError) {
+    console.error('Unable to load expired generated stories:', storyJobsError);
+    res.status(500).json({ error: 'Unable to load expired generated stories.' });
+    return;
+  }
+
+  const expiredStoryJobIds = (expiredStoryJobs || []).map((job: { id: string }) => job.id);
+  let generatedDeletedCount = 0;
+  const generatedFailures: string[] = [];
+  if (expiredStoryJobIds.length > 0) {
+    const { data: storyAudioRows, error: storyAudioError } = await supabase
+      .from('story_audio')
+      .select('id,story_job_id,storage_bucket,storage_path')
+      .in('story_job_id', expiredStoryJobIds);
+    if (storyAudioError) {
+      console.error('Unable to load generated story audio:', storyAudioError);
+      res.status(500).json({ error: 'Unable to load generated story audio.' });
+      return;
+    }
+
+    for (const item of storyAudioRows || []) {
+      if (item.storage_bucket !== STORY_AUDIO_BUCKET || !STORY_AUDIO_PATH_PATTERN.test(item.storage_path)) {
+        generatedFailures.push(item.story_job_id);
+        console.error(`Refused to delete unexpected generated audio path for ${item.story_job_id}.`);
+        continue;
+      }
+      const { error: removeError } = await supabase.storage.from(STORY_AUDIO_BUCKET).remove([item.storage_path]);
+      if (removeError) {
+        generatedFailures.push(item.story_job_id);
+        console.error(`Unable to delete generated audio ${item.story_job_id}:`, removeError);
+        continue;
+      }
+      const { error: rowDeleteError } = await supabase.from('story_audio').delete().eq('id', item.id);
+      if (rowDeleteError) {
+        generatedFailures.push(item.story_job_id);
+        console.error(`Unable to delete generated audio record ${item.story_job_id}:`, rowDeleteError);
+        continue;
+      }
+      generatedDeletedCount += 1;
+    }
+
+    const { error: storyTextCleanupError } = await supabase
+      .from('story_jobs')
+      .update({ story_text: null, updated_at: new Date().toISOString() })
+      .in('id', expiredStoryJobIds);
+    if (storyTextCleanupError) console.error('Unable to clear expired generated story text:', storyTextCleanupError);
+  }
+
+  // Prevent the persistent rate-limit table from growing indefinitely.
+  const rateLimitCutoff = DateTime.utc().minus({ days: 2 }).toISO();
+  const { error: rateLimitCleanupError } = await supabase
+    .from('api_rate_limits')
+    .delete()
+    .lt('bucket_start', rateLimitCutoff);
+  if (rateLimitCleanupError) console.error('Unable to clean expired rate limits:', rateLimitCleanupError);
+
+  res.json({
+    admin_audio: { checked: expired?.length || 0, deleted_count: deletedCount, failed_ids: failures },
+    generated_audio: {
+      checked: expiredStoryJobIds.length,
+      deleted_count: generatedDeletedCount,
+      failed_ids: generatedFailures
+    }
+  });
 });
 
 app.get('/api/admin/story-email-logs', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
@@ -791,7 +890,7 @@ app.get('/api/admin/story-email-logs', requireAdmin, async (_req: Request, res: 
 
 // Fail closed if a new or misspelled admin endpoint reaches this server without
 // an explicit route and authentication decision above.
-app.all('/api/admin/*', (_req: Request, res: Response) => {
+app.use('/api/admin', (_req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found.' });
 });
 
@@ -800,7 +899,6 @@ app.get('/api/config', (req: Request, res: Response) => {
   res.json({
     checkoutEnabled,
     isPreview: isVercel && process.env.VERCEL_ENV === 'preview',
-    paypalPaymentLink: manualPayPalPaymentLink,
     registrationConfigured: Boolean(supabase),
     turnstileRequired,
     turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null
@@ -873,7 +971,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
 
   const clientIp = getClientIp(req);
   const normalizedEmailForLimit = normalizeEmail(parent_email) || 'invalid';
-  if (isRateLimited(`ip:${clientIp}`, 5, 15 * 60 * 1000)) {
+  if (await isRateLimited(`ip:${clientIp}`, 5, 15 * 60 * 1000)) {
     res.setHeader('Retry-After', '900');
     res.status(429).json({ error: 'Too many story requests. Please try again later.' });
     return;
@@ -884,7 +982,7 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
-  if (isRateLimited(`email:${normalizedEmailForLimit}`, 3, 24 * 60 * 60 * 1000)) {
+  if (await isRateLimited(`email:${normalizedEmailForLimit}`, 3, 24 * 60 * 60 * 1000)) {
     res.setHeader('Retry-After', '86400');
     res.status(429).json({ error: 'Too many story requests. Please try again later.' });
     return;
@@ -912,6 +1010,11 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
     requestedPlan = body.plan_type as 'monthly' | 'free_trial';
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Invalid signup details.' });
+    return;
+  }
+
+  if (requestedPlan === 'monthly' && !checkoutEnabled) {
+    res.status(503).json({ error: 'Secure checkout is temporarily unavailable. Please try again later.' });
     return;
   }
 
@@ -1024,9 +1127,8 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
       mockSubscribers.push(newSub);
     }
 
-    // 2. If checkout is not enabled yet, stop after saving the registration.
-    // The plan stays unpaid until a real payment flow updates payment_status to 1.
-    if (requestedPlan === 'free_trial' || !checkoutEnabled || body.register_only === true) {
+    // Free stories do not enter the paid checkout flow.
+    if (requestedPlan === 'free_trial') {
       res.json({
         registered: true,
         subscriberId: finalSubscriberId,
@@ -1360,7 +1462,7 @@ async function startServer() {
     app.use(express.static(distPath));
     
     // SPA fallback
-    app.get('*', (req: Request, res: Response) => {
+    app.get('/{*splat}', (req: Request, res: Response) => {
       res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }

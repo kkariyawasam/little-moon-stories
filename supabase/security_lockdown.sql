@@ -16,6 +16,7 @@ DECLARE
     'delivery_attempts',
     'stories',
     'payments',
+    'api_rate_limits',
     'admin_scheduled_story_emails',
     'admin_story_email_events'
   ];
@@ -67,6 +68,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, anon, authenticated;
 
+REVOKE EXECUTE ON FUNCTION public.check_rate_limit(TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.check_rate_limit(TEXT, INTEGER, INTEGER) TO service_role;
+
 -- Audio buckets contain private child content and must never be public.
 UPDATE storage.buckets
 SET public = false
@@ -104,6 +108,7 @@ WHERE c.relkind = 'r'
     'delivery_attempts',
     'stories',
     'payments',
+    'api_rate_limits',
     'admin_scheduled_story_emails',
     'admin_story_email_events'
   ])

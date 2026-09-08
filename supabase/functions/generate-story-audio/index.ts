@@ -189,7 +189,8 @@ Deno.serve(async (req) => {
   }
 
   const cronSecret = req.headers.get('x-cron-secret');
-  if (cronSecret !== Deno.env.get('CRON_SECRET')) {
+  const expectedCronSecret = Deno.env.get('CRON_SECRET');
+  if (!expectedCronSecret || expectedCronSecret.length < 32 || !cronSecret || cronSecret !== expectedCronSecret) {
     return json({ error: 'Unauthorized' }, 401);
   }
 
