@@ -221,23 +221,7 @@ const SAMPLE_AUDIO_STORIES = [
       "A melody-filled adventure for brothers Henry and Paul and their sister Eliana, who love singing and drawing",
   },
 ] as const;
-const DEV_TEST_DATA = import.meta.env.DEV;
 const REQUIRED_STORY_CHOICES = 5;
-const TEST_ANIMALS = ["Elephant", "Rabbit", "Dolphin", "Bear", "Panda"];
-const TEST_THEMES = [
-  "Space",
-  "Fairytale",
-  "Nature",
-  "Adventure",
-  "Magic Ocean",
-];
-const TEST_HOBBIES = [
-  "Reading",
-  "Drawing",
-  "Puzzles",
-  "Singing",
-  "Building Blocks",
-];
 const AGE_RANGE_OPTIONS = ["3-4", "5-6", "7-8"] as const;
 
 export default function App() {
@@ -249,9 +233,7 @@ export default function App() {
   const [checkoutCancelled, setCheckoutCancelled] = useState(false);
 
   // Form State
-  const [parentEmail, setParentEmail] = useState(
-    DEV_TEST_DATA ? "parent.preview@example.com" : "",
-  );
+  const [parentEmail, setParentEmail] = useState("");
   const [childNames, setChildNames] = useState("");
 
   // Custom Kid Management (supports up to 5 children dynamically)
@@ -263,17 +245,7 @@ export default function App() {
       gender: "female" | "male" | "other" | "";
       birthday: string;
     }>
-  >([
-    DEV_TEST_DATA
-      ? {
-          id: "child-1",
-          name: "Niki",
-          nickname: "Niki",
-          gender: "female",
-          birthday: "2021",
-        }
-      : { id: "child-1", name: "", nickname: "", gender: "", birthday: "" },
-  ]);
+  >([{ id: "child-1", name: "", nickname: "", gender: "", birthday: "" }]);
 
   const handleAddChild = () => {
     if (childrenList.length >= 5) return;
@@ -317,15 +289,9 @@ export default function App() {
     setChildNames(formatted);
   }, [childrenList]);
 
-  const [ageRange, setAgeRange] = useState<"3-4" | "5-6" | "7-8" | "">(
-    DEV_TEST_DATA ? "3-4" : "",
-  );
-  const [deliveryTime, setDeliveryTime] = useState(
-    DEV_TEST_DATA ? "19:30" : "",
-  );
-  const [timezone, setTimezone] = useState(
-    DEV_TEST_DATA ? "America/New_York" : "",
-  );
+  const [ageRange, setAgeRange] = useState<"3-4" | "5-6" | "7-8" | "">("");
+  const [deliveryTime, setDeliveryTime] = useState("");
+  const [timezone, setTimezone] = useState("");
 
   const [selectedTheme, setSelectedTheme] = useState("adventure");
   const [customTheme, setCustomTheme] = useState("");
@@ -353,17 +319,11 @@ export default function App() {
   // New Popup and Custom Tag States
   const [showSignupModal, setShowSignupModal] = useState(false);
   const [showStoryBuilderModal, setShowStoryBuilderModal] = useState(false);
-  const [selectedAnimals, setSelectedAnimals] = useState<string[]>(
-    DEV_TEST_DATA ? TEST_ANIMALS : [],
-  );
+  const [selectedAnimals, setSelectedAnimals] = useState<string[]>([]);
   const [customAnimalInput, setCustomAnimalInput] = useState("");
-  const [selectedHobbies, setSelectedHobbies] = useState<string[]>(
-    DEV_TEST_DATA ? TEST_HOBBIES : [],
-  );
+  const [selectedHobbies, setSelectedHobbies] = useState<string[]>([]);
   const [customHobbyInput, setCustomHobbyInput] = useState("");
-  const [selectedThemes, setSelectedThemes] = useState<string[]>(
-    DEV_TEST_DATA ? TEST_THEMES : [],
-  );
+  const [selectedThemes, setSelectedThemes] = useState<string[]>([]);
   const [customThemeInput, setCustomThemeInput] = useState("");
   const [builderStep, setBuilderStep] = useState(0);
   const [registrationPlan, setRegistrationPlan] = useState<
@@ -435,26 +395,7 @@ export default function App() {
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
-      .then((data) => {
-        setConfig(data);
-        if (data.isPreview === true) {
-          setParentEmail("parent.preview@example.com");
-          setChildrenList([
-            {
-              id: "child-preview-1",
-              name: "Niki",
-              nickname: "Niki",
-              gender: "female",
-              birthday: "2021",
-            },
-          ]);
-          setSelectedAnimals(TEST_ANIMALS);
-          setSelectedThemes(TEST_THEMES);
-          setSelectedHobbies(TEST_HOBBIES);
-          setDeliveryTime("19:30");
-          setTimezone("America/New_York");
-        }
-      })
+      .then((data) => setConfig(data))
       .catch((e) => console.error(e));
 
     // Check query params for checkout success or cancellation
