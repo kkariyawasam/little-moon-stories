@@ -15,7 +15,20 @@ const isVercel = process.env.VERCEL === '1';
 const isProductionDeployment = isVercel
   ? process.env.VERCEL_ENV === 'production'
   : isProd;
-const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true';
+const paypalPaymentLink = (() => {
+  const configuredLink = process.env.PAYPAL_PAYMENT_LINK?.trim();
+  if (!configuredLink) return null;
+
+  try {
+    const url = new URL(configuredLink);
+    const isPayPalHost = url.hostname === 'paypal.com' || url.hostname.endsWith('.paypal.com');
+    const isPaymentPath = /^\/ncp\/payment\/[A-Z0-9]+\/?$/i.test(url.pathname);
+    return url.protocol === 'https:' && isPayPalHost && isPaymentPath ? url.toString() : null;
+  } catch {
+    return null;
+  }
+})();
+const checkoutEnabled = process.env.CHECKOUT_ENABLED === 'true' && Boolean(paypalPaymentLink);
 const mockCheckoutEnabled = !isProductionDeployment && process.env.ALLOW_MOCK_CHECKOUT === 'true';
 // Vercel Preview uses NODE_ENV=production but has a changing hostname that is
 // not normally authorized by the production Turnstile widget.
@@ -1141,112 +1154,14 @@ app.post('/api/subscribe', async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // 4. PayPal Integration
-    {
-      const redirectBase = process.env.APP_URL || `http://localhost:${port}`;
-      const accessToken = await getPayPalAccessToken();
-      
-      if (accessToken) {
-        try {
-          const resPayPal = await fetch(`${getPayPalApiUrl()}/v2/checkout/orders`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-              'PayPal-Request-Id': `create-order-${finalSubscriberId}`
-            },
-            body: JSON.stringify({
-              intent: 'CAPTURE',
-              purchase_units: [
-                {
-                  reference_id: finalSubscriberId,
-                  description: `${MONTHLY_PLAN_STORY_COUNT} nightly personalized stories - one-time $${MONTHLY_PLAN_PRICE_USD} payment for 30 days`,
-                  amount: {
-                    currency_code: 'USD',
-                    value: MONTHLY_PLAN_PRICE_USD,
-                    breakdown: {
-                      item_total: {
-                        currency_code: 'USD',
-                        value: MONTHLY_PLAN_PRICE_USD
-                      }
-                    }
-                  },
-                  items: [
-                    {
-                      name: 'Cozy Kid Tales 30-Day Story Plan',
-                      description: `${MONTHLY_PLAN_STORY_COUNT} nightly personalized stories`,
-                      quantity: '1',
-                      unit_amount: {
-                        currency_code: 'USD',
-                        value: MONTHLY_PLAN_PRICE_USD
-                      }
-                    }
-                  ]
-                }
-              ],
-              application_context: {
-                brand_name: 'Cozy Kid Tales',
-                landing_page: 'BILLING',
-                user_action: 'PAY_NOW',
-                return_url: `${redirectBase}/api/paypal-checkout-success?sub_id=${finalSubscriberId}`,
-                cancel_url: `${redirectBase}/?checkout_cancelled=true`
-              }
-            })
-          });
-
-          if (!resPayPal.ok) {
-            const errBody = await resPayPal.text();
-            console.error('PayPal Order creation failed API response:', errBody);
-            throw new Error(`PayPal Order creation failed: ${errBody}`);
-          }
-
-          const payPalOrder: any = await resPayPal.json();
-          const approveLink = payPalOrder.links?.find((l: any) => l.rel === 'approve')?.href;
-
-          if (!approveLink) {
-            throw new Error('No approval link returned from PayPal.');
-          }
-
-          // Save token/orderId locally or in DB
-          if (supabase) {
-            const { error: orderSaveError } = await supabase
-              .from('subscribers')
-              .update({ payment_provider_order_id: payPalOrder.id })
-              .eq('id', finalSubscriberId);
-            if (orderSaveError) {
-              console.error('Unable to save PayPal order ID:', orderSaveError);
-              throw new Error('Unable to associate checkout with the story plan.');
-            }
-          } else {
-            newSub.payment_provider_order_id = payPalOrder.id;
-          }
-
-          res.json({
-            checkoutSessionUrl: approveLink
-          });
-        } catch (payPayPalErr: any) {
-          console.error('PayPal api failed or got rate-limited. Falling back to simulation.', payPayPalErr);
-          if (!mockCheckoutEnabled) {
-            res.status(502).json({ error: 'Unable to start checkout. Please try again later.' });
-            return;
-          }
-          const mockRedirectUrl = `/api/mock-checkout-success?session_id=pay_mock_${finalSubscriberId}&sub_id=${finalSubscriberId}`;
-          res.json({
-            checkoutSessionUrl: mockRedirectUrl
-          });
-        }
-      } else {
-        if (!mockCheckoutEnabled) {
-          res.status(503).json({ error: 'Checkout is not configured yet.' });
-          return;
-        }
-        // Fallback: Create simulated mock PayPal checkout URL for local developer sandbox
-        const mockRedirectUrl = `/api/mock-checkout-success?session_id=pay_mock_${finalSubscriberId}&sub_id=${finalSubscriberId}`;
-        res.json({
-          checkoutSessionUrl: mockRedirectUrl
-        });
-      }
+    // 4. Static PayPal checkout. Payment confirmation and subscriber activation
+    // are intentionally handled manually because this link has no subscriber ID.
+    if (checkoutEnabled && paypalPaymentLink) {
+      res.json({ checkoutSessionUrl: paypalPaymentLink });
+      return;
     }
+
+    res.status(503).json({ error: 'Checkout is not configured yet.' });
   } catch (err: any) {
     console.error('Subscription creation failed:', err);
     res.status(500).json({ error: 'Unable to create your story plan right now. Please try again later.' });
