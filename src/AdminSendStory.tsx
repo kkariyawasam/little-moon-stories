@@ -62,7 +62,7 @@ type ScheduleReceipt = {
   scheduledAtUtc: string;
   resendEmailId: string;
   status: string;
-  storyDay: number;
+  storyDate: string;
 };
 
 const statusStyles: Record<string, string> = {
@@ -92,7 +92,6 @@ export default function AdminSendStory() {
   const [password, setPassword] = useState('');
   const [recipient, setRecipient] = useState('');
   const [subject, setSubject] = useState('Your Cozy Bedtime Story');
-  const [storyDay, setStoryDay] = useState(1);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [deliveryDate, setDeliveryDate] = useState(getTodayDateValue);
   const [deliveryTime, setDeliveryTime] = useState('19:30');
@@ -218,7 +217,6 @@ export default function AdminSendStory() {
         body: JSON.stringify({
           recipient,
           subject,
-          storyDay,
           localDateTime: `${deliveryDate}T${deliveryTime}`,
           timezone,
           audioPath: upload.path,
@@ -275,7 +273,6 @@ export default function AdminSendStory() {
               <form onSubmit={scheduleStory} className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-1">Recipient email<div className="relative mt-1.5"><Mail className="absolute left-3 top-3 text-indigo-300" size={18} /><input type="email" required value={recipient} onChange={event => setRecipient(event.target.value)} placeholder="parent@example.com" className="w-full rounded-xl border border-indigo-300/25 bg-slate-950 py-3 pl-10 pr-3 text-sm text-white outline-none focus:border-amber-300" /></div></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-1">Subject<input required maxLength={120} value={subject} onChange={event => setSubject(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
-                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-2">Story day (of 30)<input type="number" required min={1} max={30} step={1} value={storyDay} onChange={event => setStoryDay(Number(event.target.value))} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 sm:col-span-2">WAV story file<span className="mt-1.5 flex min-h-24 cursor-pointer items-center justify-center rounded-xl border border-dashed border-indigo-300/35 bg-indigo-300/5 px-4 text-center hover:border-amber-300/60"><input type="file" accept=".wav,audio/wav,audio/x-wav" required className="sr-only" onChange={event => chooseAudio(event.target.files?.[0] || null)} /><span className="flex flex-col items-center gap-1 text-sm normal-case tracking-normal text-slate-200">{audioFile ? <><FileAudio className="text-amber-300" /><strong>{audioFile.name}</strong><span className="text-xs text-slate-400">{(audioFile.size / 1024 / 1024).toFixed(1)} MB</span></> : <><Upload className="text-indigo-300" /><strong>Choose a WAV file</strong><span className="text-xs text-slate-400">Maximum 25 MB</span></>}</span></span></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200">Client delivery date<input type="date" required min={minimumDate} value={deliveryDate} onChange={event => setDeliveryDate(event.target.value)} className="mt-1.5 w-full rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300" /></label>
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200">Client delivery time<select required value={deliveryTime} onChange={event => setDeliveryTime(event.target.value)} className="mt-1.5 w-full cursor-pointer rounded-xl border border-indigo-300/25 bg-slate-950 px-3.5 py-3 text-sm text-white outline-none focus:border-amber-300">{DELIVERY_TIME_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -285,7 +282,7 @@ export default function AdminSendStory() {
               </form>
             </section>
 
-            {receipt && <section className="mt-5 rounded-xl border border-emerald-300/30 bg-emerald-300/10 p-4 sm:p-5"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" /><div><h2 className="font-bold text-emerald-100">Successfully scheduled</h2><dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-xs text-slate-400">Story</dt><dd>Day {receipt.storyDay} of 30</dd></div><div><dt className="text-xs text-slate-400">Recipient</dt><dd className="break-all">{receipt.recipient}</dd></div><div><dt className="text-xs text-slate-400">Client-local time</dt><dd>{receipt.clientLocalTime}</dd></div><div><dt className="text-xs text-slate-400">Time zone</dt><dd>{receipt.timezone}</dd></div><div><dt className="text-xs text-slate-400">Resend email ID</dt><dd className="break-all font-mono text-xs">{receipt.resendEmailId}</dd></div></dl></div></div></section>}
+            {receipt && <section className="mt-5 rounded-xl border border-emerald-300/30 bg-emerald-300/10 p-4 sm:p-5"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" /><div><h2 className="font-bold text-emerald-100">Successfully scheduled</h2><dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-xs text-slate-400">Story date</dt><dd>{receipt.storyDate}</dd></div><div><dt className="text-xs text-slate-400">Recipient</dt><dd className="break-all">{receipt.recipient}</dd></div><div><dt className="text-xs text-slate-400">Client-local time</dt><dd>{receipt.clientLocalTime}</dd></div><div><dt className="text-xs text-slate-400">Time zone</dt><dd>{receipt.timezone}</dd></div><div><dt className="text-xs text-slate-400">Resend email ID</dt><dd className="break-all font-mono text-xs">{receipt.resendEmailId}</dd></div></dl></div></div></section>}
 
             <section className="mt-7">
               <div className="mb-3 flex items-center justify-between"><div><h2 className="font-kids text-2xl text-white">Delivery activity</h2><p className="text-xs text-slate-400">Updated from verified Resend webhooks.</p></div><button type="button" onClick={() => void loadLogs()} disabled={loadingLogs} title="Refresh delivery activity" className="rounded-lg border border-indigo-300/25 p-2 text-indigo-100 hover:border-amber-300/50"><RefreshCw size={17} className={loadingLogs ? 'animate-spin' : ''} /></button></div>

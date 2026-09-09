@@ -622,7 +622,6 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
 
   const recipient = normalizeEmail(req.body?.recipient);
   const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim().replace(/\s+/g, ' ') : '';
-  const storyDay = Number(req.body?.storyDay);
   const localDateTime = typeof req.body?.localDateTime === 'string' ? req.body.localDateTime : '';
   const timezone = typeof req.body?.timezone === 'string' ? req.body.timezone : '';
   const audioPath = typeof req.body?.audioPath === 'string' ? req.body.audioPath : '';
@@ -633,9 +632,6 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     || !subject
     || subject.length > 120
     || UNSAFE_TEXT_PATTERN.test(subject)
-    || !Number.isInteger(storyDay)
-    || storyDay < 1
-    || storyDay > 30
     || !US_TIMEZONES.has(timezone)
     || !/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(localDateTime)
     || !ADMIN_AUDIO_PATH_PATTERN.test(audioPath)
@@ -643,7 +639,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
     || originalFilename.length > 160
     || !/^[a-zA-Z0-9 ._-]+\.wav$/i.test(originalFilename)
   ) {
-    res.status(400).json({ error: 'Please check the recipient, story day, subject, WAV file, date, time, and U.S. time zone.' });
+    res.status(400).json({ error: 'Please check the recipient, subject, WAV file, date, time, and U.S. time zone.' });
     return;
   }
 
@@ -693,8 +689,9 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
 
   const storyUrl = signedAudio.signedUrl;
   const escapedStoryUrl = escapeHtml(storyUrl);
+  const storyDate = clientTime.toFormat('MMMM d, yyyy');
   const linkExpiryDate = deleteAfterUtc.toFormat('MMMM d, yyyy');
-  const emailSubject = `Day ${storyDay} of 30 — ${subject}`;
+  const emailSubject = `${subject} 🌙 - ${storyDate}`;
   const { error: insertError } = await supabase.from('admin_scheduled_story_emails').insert({
     id: scheduleId,
     recipient_email: recipient,
@@ -718,8 +715,8 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
       from: 'Cozy Kid Tales <stories@cozykidtales.com>',
       to: [recipient],
       subject: emailSubject,
-      html: `<div style="margin:0;background:#f5f3ff;padding:32px 16px;font-family:Arial,sans-serif;color:#172554"><div style="margin:0 auto;max-width:560px;border:1px solid #ddd6fe;border-radius:20px;background:#ffffff;padding:32px;text-align:center;box-shadow:0 8px 24px rgba(30,27,75,.08)"><div style="font-size:34px;line-height:1">&#127769;</div><p style="display:inline-block;margin:16px 0 4px;border-radius:999px;background:#fef3c7;padding:7px 14px;color:#92400e;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase">Story Day ${storyDay} of 30</p><h1 style="margin:12px 0 8px;font-size:26px;color:#1e1b4b">${escapeHtml(subject)}</h1><p style="margin:0 auto 24px;max-width:420px;font-size:16px;line-height:1.6;color:#475569">Your Day ${storyDay} personalized bedtime adventure is ready to enjoy.</p><a href="${escapedStoryUrl}" style="display:inline-block;border-radius:999px;background:#facc15;padding:15px 26px;color:#172554;font-size:16px;font-weight:700;text-decoration:none">&#9654;&nbsp; Listen to the bedtime story</a><p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#64748b">This private story link expires on ${escapeHtml(linkExpiryDate)}.</p><p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#475569">Sweet dreams,<br><strong>Cozy Kid Tales</strong></p></div></div>`,
-      text: `Story Day ${storyDay} of 30\n\n${subject}\n\nYour Day ${storyDay} personalized bedtime adventure is ready to enjoy.\n\nListen to your story: ${storyUrl}\n\nThis private link expires on ${linkExpiryDate}.\n\nSweet dreams,\nCozy Kid Tales`,
+      html: `<div style="margin:0;background:#f5f3ff;padding:32px 16px;font-family:Arial,sans-serif;color:#172554"><div style="margin:0 auto;max-width:560px;border:1px solid #ddd6fe;border-radius:20px;background:#ffffff;padding:32px;text-align:center;box-shadow:0 8px 24px rgba(30,27,75,.08)"><h1 style="margin:0 0 8px;font-size:26px;color:#1e1b4b">${escapeHtml(subject)}</h1><p style="margin:0 auto 24px;max-width:420px;font-size:16px;line-height:1.6;color:#475569">Your personalized bedtime adventure for ${escapeHtml(storyDate)} is ready to enjoy.</p><a href="${escapedStoryUrl}" style="display:inline-block;border-radius:999px;background:#facc15;padding:15px 26px;color:#172554;font-size:16px;font-weight:700;text-decoration:none">&#9654;&nbsp; Listen to the bedtime story</a><p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#64748b">This private story link expires on ${escapeHtml(linkExpiryDate)}.</p><p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#475569">Sweet dreams,<br><strong>Cozy Kid Tales</strong></p></div></div>`,
+      text: `${subject}\n\nYour personalized bedtime adventure for ${storyDate} is ready to enjoy.\n\nListen to your story: ${storyUrl}\n\nThis private link expires on ${linkExpiryDate}.\n\nSweet dreams,\nCozy Kid Tales`,
       scheduledAt,
       tags: [{ name: 'schedule_id', value: scheduleId }]
     }, { idempotencyKey: `admin-story/${scheduleId}` });
@@ -740,7 +737,7 @@ app.post('/api/admin/schedule-story', requireAdmin, async (req: Request, res: Re
       scheduledAtUtc: scheduledAt,
       resendEmailId: result.data.id,
       status: 'scheduled',
-      storyDay
+      storyDate
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to schedule the email.';
