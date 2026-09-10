@@ -230,6 +230,7 @@ export default function App() {
 
   // Checkout URL success states
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [paymentSubmitted, setPaymentSubmitted] = useState(false);
   const [checkoutCancelled, setCheckoutCancelled] = useState(false);
 
   // Form State
@@ -400,6 +401,10 @@ export default function App() {
 
     // Check query params for checkout success or cancellation
     const params = new URLSearchParams(window.location.search);
+    if (params.get("payment_submitted") === "true") {
+      setPaymentSubmitted(true);
+      window.history.replaceState({}, document.title, "/");
+    }
     const paymentConfirmation = params.get("payment_confirmation");
     if (paymentConfirmation) {
       fetch(
@@ -933,6 +938,31 @@ export default function App() {
                   window.history.replaceState({}, document.title, "/");
                 }}
                 className="text-xs bg-slate-950 text-white px-3 py-1.5 rounded-full hover:bg-slate-800 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {paymentSubmitted && (
+          <div
+            id="payment-submitted-banner"
+            className="relative z-50 border-b border-sky-300/30 bg-gradient-to-r from-sky-200 via-indigo-100 to-amber-100 px-4 py-3.5 font-semibold text-slate-950 shadow-xl"
+          >
+            <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
+              <span className="flex items-center gap-2 text-sm">
+                <CheckCircle className="h-5 w-5 shrink-0 text-emerald-700" />
+                <span>
+                  Thank you for your payment! We’re confirming it now and
+                  preparing your 30-day story plan. If your selected bedtime is
+                  at least 4 hours away, your first story will arrive today.
+                  Otherwise, it will arrive tomorrow at your chosen bedtime.
+                </span>
+              </span>
+              <button
+                onClick={() => setPaymentSubmitted(false)}
+                className="rounded-full bg-slate-950 px-3 py-1.5 text-xs text-white transition-colors hover:bg-slate-800"
               >
                 Dismiss
               </button>
