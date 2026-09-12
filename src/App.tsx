@@ -31,7 +31,6 @@ import {
   Globe,
 } from "lucide-react";
 import { Analytics } from "@vercel/analytics/react";
-import cozyBedtimeFarmImage from "./assets/images/cozy_bedtime_farm_1781463254008.jpg";
 
 declare global {
   interface Window {
@@ -1097,7 +1096,7 @@ export default function App() {
                     className="w-full sm:w-auto min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-100 border border-indigo-300/30 bg-slate-950/40 hover:bg-slate-900/70 hover:border-indigo-300/60 font-bold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                   >
                     <Volume2 className="w-4 h-4" />
-                    Hear Sample
+                    Hear Sample Bedtime Story
                   </button>
                 </div>
 
@@ -1130,23 +1129,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Childhood Story Image & Soundscape Mixer - Centered and beautifully relative scaled */}
-              <div className="w-full max-w-2xl mt-8">
-                {/* 1. Beautiful Cozy 3D Farm Countryside Illustration */}
-                <div className="relative group overflow-hidden rounded-3xl border-4 border-amber-300 bg-emerald-950 p-1 bg-gradient-to-tr from-rose-500/20 via-emerald-500/20 to-amber-500/25 shadow-[0_15px_35px_rgba(250,204,21,0.15)] transition-all hover:scale-[1.01] duration-300">
-                  <div className="absolute top-3 left-3 z-20 bg-rose-500 text-white font-bold text-[10px] uppercase font-mono px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-white animate-spin" />
-                    <span>Sweet Sleep Land</span>
-                  </div>
-
-                  <img
-                    src={cozyBedtimeFarmImage}
-                    alt="Cozy bedtime farm under a peaceful starry countryside sky"
-                    className="block w-full aspect-[16/9] object-cover rounded-[20px]"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              </div>
             </div>
           </section>
 
@@ -1230,7 +1212,7 @@ export default function App() {
                 onClick={playSampleAudio}
                 className="px-6 py-3 rounded-xl border border-indigo-300/30 bg-slate-950/40 text-slate-100 hover:border-amber-300/50 hover:text-amber-200 transition-all text-sm font-bold"
               >
-                Hear the Sample Voice
+                Hear Sample Bedtime Story
               </button>
             </div>
           </section>
@@ -2264,18 +2246,30 @@ export default function App() {
                     Register your child's story preferences and receive one
                     personalized audio story tomorrow at your selected time.
                   </p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
+                    Included in both plans
+                  </p>
                   <ul className="space-y-3 text-xs text-slate-200">
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-emerald-300" />
-                      <span>No payment details required</span>
+                      <span>Personalized around hobbies &amp; favorite animals</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-emerald-300" />
-                      <span>Personalized from your choices</span>
+                      <span>No account required</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-emerald-300" />
                       <span>Sent to the parent's email</span>
+                    </li>
+                  </ul>
+                  <p className="pt-2 text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
+                    Free-story extra
+                  </p>
+                  <ul className="space-y-3 text-xs text-slate-200">
+                    <li className="flex items-center gap-2.5">
+                      <Check className="w-4 h-4 shrink-0 text-emerald-300" />
+                      <span>No payment details required</span>
                     </li>
                   </ul>
                 </div>
@@ -2309,24 +2303,35 @@ export default function App() {
                     nightly stories over 30 days.
                   </p>
 
-                  <ul className="mt-6 space-y-3 text-xs text-indigo-100 font-light">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#b4bcff] font-mono">
+                    Included in both plans
+                  </p>
+                  <ul className="space-y-3 text-xs text-indigo-100 font-light">
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-amber-300" />
-                      <span>
-                        <strong>Daily personalized</strong> tales every night
-                      </span>
+                      <span>Personalized around hobbies &amp; favorite animals</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-amber-300" />
-                      <span>Bespoke theme & hobby alignments</span>
+                      <span>No account required</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-amber-300" />
-                      <span>Cozy nature scenes included</span>
+                      <span>Sent to the parent's email</span>
+                    </li>
+                  </ul>
+
+                  <p className="pt-2 text-[10px] font-bold uppercase tracking-widest text-amber-300 font-mono">
+                    30-day plan extras
+                  </p>
+                  <ul className="space-y-3 text-xs text-indigo-100 font-light">
+                    <li className="flex items-center gap-2.5">
+                      <Check className="w-4 h-4 shrink-0 text-amber-300" />
+                      <span>A newly created story every night</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-amber-300" />
-                      <span>100% advertising-free, pure media</span>
+                      <span>30 personalized stories over 30 days</span>
                     </li>
                   </ul>
                 </div>
