@@ -1046,10 +1046,10 @@ export default function App() {
             <div className="shrink-0">
               <button
                 onClick={() => scrollTo("pricing")}
-                className="min-h-10 px-3 sm:px-5 py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-wide sm:tracking-wider text-slate-950 bg-amber-300 rounded-xl hover:bg-amber-200 hover:shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all cursor-pointer font-bold"
+                className="min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
-                <span className="sm:hidden">See Plans</span>
-                <span className="hidden sm:inline">See Story Plans</span>
+                <Moon className="w-4 h-4" />
+                Try it Free
               </button>
             </div>
           </div>
@@ -1087,17 +1087,17 @@ export default function App() {
                 <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-4">
                   <button
                     onClick={() => scrollTo("pricing")}
-                    className="w-full sm:w-auto min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+                    className="w-full sm:w-auto min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                   >
                     <Moon className="w-4 h-4" />
-                    See Story Plans
+                    Try it Free
                   </button>
                   <button
                     onClick={playSampleAudio}
                     className="w-full sm:w-auto min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-100 border border-indigo-300/30 bg-slate-950/40 hover:bg-slate-900/70 hover:border-indigo-300/60 font-bold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                   >
                     <Volume2 className="w-4 h-4" />
-                    Hear Sample First
+                    Hear Sample
                   </button>
                 </div>
 
@@ -1403,10 +1403,10 @@ export default function App() {
             <div className="mt-8 flex justify-center">
               <button
                 onClick={() => scrollTo("pricing")}
-                className="px-7 py-3.5 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_22px_rgba(245,158,11,0.18)] transition-all flex items-center justify-center gap-2 text-sm"
+                className="min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
-                See Story Plans
-                <ArrowRight className="w-4 h-4" />
+                <Moon className="w-4 h-4" />
+                Try it Free
               </button>
             </div>
           </section>
