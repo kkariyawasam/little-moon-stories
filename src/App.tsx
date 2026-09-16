@@ -31,6 +31,7 @@ import {
   Globe,
 } from "lucide-react";
 import { Analytics } from "@vercel/analytics/react";
+import BlogSection from "./components/BlogSection";
 
 declare global {
   interface Window {
@@ -1033,6 +1034,12 @@ export default function App() {
                 className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === "pricing" ? "text-amber-400" : ""}`}
               >
                 Pricing
+              </button>
+              <button
+                onClick={() => scrollTo("blog")}
+                className={`hover:text-amber-300 transition-colors cursor-pointer ${activeTab === "blog" ? "text-amber-400" : ""}`}
+              >
+                Blog
               </button>
               <button
                 onClick={() => scrollTo("faq")}
@@ -2351,6 +2358,8 @@ export default function App() {
               </div>
             </div>
           </section>
+
+          <BlogSection />
 
           {/* 8. PARENT FAQ ACCORDION */}
           <section
