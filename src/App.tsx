@@ -952,10 +952,10 @@ export default function App() {
               <span className="flex items-center gap-2 text-sm">
                 <CheckCircle className="h-5 w-5 shrink-0 text-emerald-700" />
                 <span>
-                  Thank you for your payment! We’re confirming it now and
-                  preparing your 30-day story plan. Once your payment is
-                  confirmed, your first story will be scheduled for tomorrow at
-                  your chosen bedtime.
+                  Thank you for your payment! We’re now verifying it and
+                  preparing your 30-day personalized story plan. Once your
+                  payment is confirmed, starting tomorrow, you’ll receive a new
+                  personalized story every day for 30 days at your chosen bedtime.
                 </span>
               </span>
               <button
