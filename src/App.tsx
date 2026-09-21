@@ -699,7 +699,7 @@ export default function App() {
             text:
               requestedPlan === "monthly"
                 ? "Your plan was saved, but secure checkout did not start. Please try again."
-                : "Your free story request was saved. If your selected bedtime is at least 4 hours away, it will arrive today. Otherwise, it will arrive tomorrow at your selected time.",
+                : "Your free story request was saved. Your personalized audio story will arrive tomorrow at your selected bedtime.",
           });
           if (requestedPlan === "monthly") {
             setSignupMessage({
@@ -926,10 +926,8 @@ export default function App() {
                 <CheckCircle className="w-5 h-5 shrink-0 text-slate-950 animate-bounce" />
                 <span>
                   Payment successful! Your Cozy Kid Tales 30-day plan is
-                  active. Your $9 payment includes 30 nightly stories. If your
-                  selected bedtime is at least 4 hours from now, we will prepare
-                  and send your first story tonight. Otherwise, your first story
-                  will arrive tomorrow at your chosen bedtime.
+                  active. Your $9 payment includes 30 nightly stories. Your
+                  first story will arrive tomorrow at your chosen bedtime.
                 </span>
               </span>
               <button
@@ -955,9 +953,9 @@ export default function App() {
                 <CheckCircle className="h-5 w-5 shrink-0 text-emerald-700" />
                 <span>
                   Thank you for your payment! We’re confirming it now and
-                  preparing your 30-day story plan. If your selected bedtime is
-                  at least 4 hours away, your first story will arrive today.
-                  Otherwise, it will arrive tomorrow at your chosen bedtime.
+                  preparing your 30-day story plan. Once your payment is
+                  confirmed, your first story will be scheduled for tomorrow at
+                  your chosen bedtime.
                 </span>
               </span>
               <button
@@ -2251,7 +2249,7 @@ export default function App() {
                   </div>
                   <p className="text-sm text-slate-300 leading-relaxed">
                     Register your child's story preferences and receive one
-                    personalized audio story tomorrow at your selected time.
+                    personalized audio story tomorrow at your selected bedtime.
                   </p>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
                     Included in both plans
