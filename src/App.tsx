@@ -2235,7 +2235,7 @@ export default function App() {
             <div className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto items-stretch reveal-stagger">
               <div className="p-5 sm:p-7 rounded-3xl bg-[#0b1238] border-2 border-emerald-300/70 shadow-[0_0_26px_rgba(110,231,183,0.12)] flex flex-col justify-between gap-8 text-left relative overflow-hidden">
                 <div className="space-y-4">
-                  <span className="inline-flex text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
                     Try It Free
                   </span>
                   <h3 className="text-2xl font-bold text-white">
@@ -2247,12 +2247,12 @@ export default function App() {
                     </span>
                     <span className="text-xs text-slate-300">one time</span>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed">
+                  <p className="md:min-h-[5.25rem] text-sm font-light text-slate-300 leading-relaxed">
                     Register your child's story preferences and receive one
                     personalized audio story tomorrow at your selected bedtime.
                   </p>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
-                    Included in both plans
+                    What you'll get
                   </p>
                   <ul className="space-y-3 text-xs text-slate-200">
                     <li className="flex items-center gap-2.5">
@@ -2267,11 +2267,6 @@ export default function App() {
                       <Check className="w-4 h-4 shrink-0 text-emerald-300" />
                       <span>Sent to the parent's email</span>
                     </li>
-                  </ul>
-                  <p className="pt-2 text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
-                    Free-story extra
-                  </p>
-                  <ul className="space-y-3 text-xs text-slate-200">
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-emerald-300" />
                       <span>No payment details required</span>
@@ -2287,9 +2282,9 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#121b4a] to-[#0a113a] border border-indigo-400/40 flex flex-col justify-between gap-8 text-left relative overflow-hidden">
+              <div className="p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#121b4a] to-[#0a113a] border-2 border-indigo-400/40 flex flex-col justify-between gap-8 text-left relative overflow-hidden">
                 <div className="space-y-4">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#b4bcff] font-mono">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-[#b4bcff] font-mono">
                     30 Nights of Stories
                   </span>
                   <h3 className="text-2xl font-bold text-white">
@@ -2303,13 +2298,13 @@ export default function App() {
                     <span className="text-xs text-indigo-200">for 30 days</span>
                   </div>
 
-                  <p className="text-xs text-indigo-200 leading-relaxed font-light">
+                  <p className="md:min-h-[5.25rem] text-sm font-light text-slate-300 leading-relaxed">
                     One-time $9 payment. Receive 30 newly created personalized
                     nightly stories over 30 days.
                   </p>
 
                   <p className="text-[10px] font-bold uppercase tracking-widest text-[#b4bcff] font-mono">
-                    Included in both plans
+                    What you'll get
                   </p>
                   <ul className="space-y-3 text-xs text-indigo-100 font-light">
                     <li className="flex items-center gap-2.5">
@@ -2324,12 +2319,6 @@ export default function App() {
                       <Check className="w-4 h-4 shrink-0 text-amber-300" />
                       <span>Sent to the parent's email</span>
                     </li>
-                  </ul>
-
-                  <p className="pt-2 text-[10px] font-bold uppercase tracking-widest text-amber-300 font-mono">
-                    30-day plan extras
-                  </p>
-                  <ul className="space-y-3 text-xs text-indigo-100 font-light">
                     <li className="flex items-center gap-2.5">
                       <Check className="w-4 h-4 shrink-0 text-amber-300" />
                       <span>A newly created story every night</span>
