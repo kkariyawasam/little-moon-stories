@@ -1780,7 +1780,7 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        {selectedAnimals.length}/{MAX_STORY_CHOICES} selected · 1 required
+                        {selectedAnimals.length}/{MAX_STORY_CHOICES} selected
                       </p>
                       {selectedAnimals.filter(
                         (animal) => !builderAnimalOptions.includes(animal),
@@ -2028,7 +2028,7 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        {selectedHobbies.length}/{MAX_STORY_CHOICES} selected · 1 required
+                        {selectedHobbies.length}/{MAX_STORY_CHOICES} selected
                       </p>
                       {selectedHobbies.filter(
                         (hobby) => !builderHobbyOptions.includes(hobby),
