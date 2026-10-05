@@ -243,6 +243,7 @@ export default function App() {
     );
   });
   const facebookLandingTracked = useRef(false);
+  const trackedAudioStarts = useRef(new Set<string>());
 
   useEffect(() => {
     if (!isFacebookVisitor || facebookLandingTracked.current) return;
@@ -425,6 +426,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("payment_submitted") === "true") {
       setPaymentSubmitted(true);
+      trackGaEvent("payment_return_unverified", { payment_provider: "paypal" });
       window.history.replaceState({}, document.title, "/");
     }
     const paymentConfirmation = params.get("payment_confirmation");
@@ -438,12 +440,48 @@ export default function App() {
         .then(async (response) =>
           response.ok ? response.json() : { confirmed: false },
         )
-        .then((data) => setCheckoutSuccess(data.confirmed === true))
+        .then((data) => {
+          const confirmed = data.confirmed === true;
+          setCheckoutSuccess(confirmed);
+          if (confirmed && data.transactionId) {
+            const storageKey = `ga4_purchase_${data.transactionId}`;
+            let alreadyTracked = false;
+            try {
+              alreadyTracked = window.sessionStorage.getItem(storageKey) === "1";
+            } catch {
+              // Analytics must never interfere with payment confirmation UI.
+            }
+            if (!alreadyTracked) {
+              const purchase = {
+                transaction_id: data.transactionId,
+                value: Number(data.value) || 9,
+                currency: data.currency || "USD",
+                payment_type: "paypal",
+                items: [
+                  {
+                    item_id: "30_day_story_plan",
+                    item_name: "30-Day Personalized Story Plan",
+                    price: Number(data.value) || 9,
+                    quantity: 1,
+                  },
+                ],
+              };
+              trackGaEvent("purchase", purchase);
+              trackGaEvent("payment_verified", purchase);
+              try {
+                window.sessionStorage.setItem(storageKey, "1");
+              } catch {
+                // Storage can be unavailable in privacy-focused browsers.
+              }
+            }
+          }
+        })
         .catch(() => setCheckoutSuccess(false))
         .finally(() => window.history.replaceState({}, document.title, "/"));
     }
     if (params.get("checkout_cancelled") === "true") {
       setCheckoutCancelled(true);
+      trackGaEvent("checkout_cancel", { payment_provider: "paypal" });
     }
   }, []);
 
@@ -456,7 +494,16 @@ export default function App() {
     }
   };
 
-  const openStoryBuilder = (plan: "free_trial" | "monthly") => {
+  const openStoryBuilder = (
+    plan: "free_trial" | "monthly",
+    ctaLocation = "unspecified",
+  ) => {
+    trackGaEvent("cta_click", {
+      cta_name: plan === "free_trial" ? "create_free_story" : "get_30_stories",
+      cta_location: ctaLocation,
+      plan_type: plan,
+      traffic_segment: isFacebookVisitor ? "facebook" : "other",
+    });
     trackGaEvent("story_form_start", {
       plan_type: plan,
       traffic_segment: isFacebookVisitor ? "facebook" : "other",
@@ -465,6 +512,18 @@ export default function App() {
     setSignupMessage(null);
     setBuilderStep(0);
     setShowStoryBuilderModal(true);
+  };
+
+  const trackSampleStart = (sampleName: string, placement: string) => {
+    const key = `${placement}:${sampleName}`;
+    if (trackedAudioStarts.current.has(key)) return;
+    trackedAudioStarts.current.add(key);
+    trackGaEvent("audio_start", {
+      content_type: "sample_story",
+      item_id: sampleName,
+      placement,
+      traffic_segment: isFacebookVisitor ? "facebook" : "other",
+    });
   };
 
   useEffect(() => {
@@ -732,6 +791,19 @@ export default function App() {
 
       if (response.ok) {
         if (data.checkoutSessionUrl) {
+          trackGaEvent("begin_checkout", {
+            currency: "USD",
+            value: 9,
+            payment_type: "paypal",
+            items: [
+              {
+                item_id: "30_day_story_plan",
+                item_name: "30-Day Personalized Story Plan",
+                price: 9,
+                quantity: 1,
+              },
+            ],
+          });
           trackGaEvent("paypal_checkout_start", {
             plan_type: requestedPlan,
             value: 9,
@@ -742,6 +814,12 @@ export default function App() {
           window.location.href = data.checkoutSessionUrl;
         } else if (data.registered) {
           if (requestedPlan === "free_trial") {
+            trackGaEvent("generate_lead", {
+              currency: "USD",
+              value: 0,
+              lead_type: "free_story_request",
+              traffic_segment: isFacebookVisitor ? "facebook" : "other",
+            });
             trackGaEvent("free_story_submit", {
               traffic_segment: isFacebookVisitor ? "facebook" : "other",
             });
@@ -790,7 +868,7 @@ export default function App() {
   };
 
   const handleMonthlyPlanRequest = () => {
-    openStoryBuilder("monthly");
+    openStoryBuilder("monthly", "pricing_paid");
   };
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-twilight-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-black relative">
@@ -1101,7 +1179,7 @@ export default function App() {
 
             <div className="shrink-0">
               <button
-                onClick={() => openStoryBuilder("free_trial")}
+                onClick={() => openStoryBuilder("free_trial", "header")}
                 className="min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 <Moon className="w-4 h-4" />
@@ -1173,13 +1251,7 @@ export default function App() {
                   <audio
                     controls
                     controlsList="nodownload"
-                    onPlay={() =>
-                      trackGaEvent("hear_sample", {
-                        sample_name: "noah_emma_bird_story",
-                        placement: "hero",
-                        traffic_segment: isFacebookVisitor ? "facebook" : "other",
-                      })
-                    }
+                    onPlay={() => trackSampleStart("noah_emma_bird_story", "hero")}
                     onContextMenu={(event) => event.preventDefault()}
                     preload="metadata"
                     src={SAMPLE_AUDIO_STORIES[0].src}
@@ -1191,7 +1263,7 @@ export default function App() {
 
                 <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-4">
                   <button
-                    onClick={() => openStoryBuilder("free_trial")}
+                    onClick={() => openStoryBuilder("free_trial", "hero")}
                     className="w-full sm:w-auto min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                   >
                     <Moon className="w-4 h-4" />
@@ -1368,13 +1440,7 @@ export default function App() {
                       ref={index === 0 ? sampleAudioRef : undefined}
                       controls
                       controlsList="nodownload"
-                      onPlay={() =>
-                        trackGaEvent("hear_sample", {
-                          sample_name: story.title,
-                          placement: "sample_section",
-                          traffic_segment: isFacebookVisitor ? "facebook" : "other",
-                        })
-                      }
+                      onPlay={() => trackSampleStart(story.title, "sample_section")}
                       onContextMenu={(event) => event.preventDefault()}
                       preload="metadata"
                       src={story.src}
@@ -1486,7 +1552,7 @@ export default function App() {
             </div>
             <div className="mt-8 flex justify-center">
               <button
-                onClick={() => openStoryBuilder("free_trial")}
+                onClick={() => openStoryBuilder("free_trial", "benefits")}
                 className="min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 <Moon className="w-4 h-4" />
@@ -2387,7 +2453,7 @@ export default function App() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => openStoryBuilder("free_trial")}
+                  onClick={() => openStoryBuilder("free_trial", "pricing_free")}
                   className="w-full py-3 rounded-xl text-slate-950 bg-emerald-200 hover:bg-emerald-100 font-bold text-xs uppercase tracking-wider transition-colors"
                 >
                   Request My Free Story

@@ -950,7 +950,12 @@ app.get('/api/payment-confirmation', async (req: Request, res: Response): Promis
     }
   }
 
-  res.json({ confirmed: true });
+  res.json({
+    confirmed: true,
+    transactionId: confirmation.orderId,
+    value: 9,
+    currency: 'USD'
+  });
 });
 
 // Subscriber action endpoint (Signup + optional payment handler)
