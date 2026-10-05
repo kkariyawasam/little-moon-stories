@@ -673,12 +673,6 @@ export default function App() {
         plan_type: registrationPlan,
         traffic_segment: isFacebookVisitor ? "facebook" : "other",
       });
-      if (targetStep === 3) {
-        trackGaEvent("personalization_preview_view", {
-          plan_type: registrationPlan,
-          traffic_segment: isFacebookVisitor ? "facebook" : "other",
-        });
-      }
       setBuilderStep(targetStep);
     }
   };
@@ -1670,23 +1664,6 @@ export default function App() {
                   )}
                 </div>
 
-                {builderStep >= 3 && childrenComplete && hasAnimal && hasHobby && (
-                  <div className="mb-3 rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-300/10 via-indigo-400/10 to-emerald-300/10 p-3.5 text-left">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
-                      Your personalization preview
-                    </span>
-                    <h3 className="mt-1 font-kids text-xl tracking-wide text-white">
-                      {childrenList[0].nickname.trim()} and the Moonlight {selectedAnimals[0]}
-                    </h3>
-                    <p className="mt-1.5 text-xs leading-5 text-indigo-100/80">
-                      Tonight, {childrenList[0].nickname.trim()} meets a gentle {selectedAnimals[0].toLowerCase()} and discovers how {selectedHobbies[0].toLowerCase()} can open the door to a calming adventure.
-                    </p>
-                    <p className="mt-2 text-[10px] text-slate-400">
-                      This is an example preview. Your delivered story will be newly created from all your selections.
-                    </p>
-                  </div>
-                )}
-
                 <div className="hidden">
                   {builderSteps.map((step, index) => {
                     const isActive = builderStep === index;
@@ -2284,14 +2261,11 @@ export default function App() {
                         placeholder="Parent email address"
                         className="w-full px-2.5 py-1.5 bg-[#05060d] border border-[#212752] rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-400 placeholder:text-slate-600"
                       />
-                      {parentEmail.trim() && !emailComplete && (
+                      {!emailComplete && (
                         <p className="text-xs text-amber-200/90">
-                          Please enter a valid email address.
-                        </p>
-                      )}
-                      {!canRegister && (
-                        <p className="text-xs text-amber-200/90">
-                          Enter a valid parent email to save the story plan.
+                          {parentEmail.trim()
+                            ? "Please enter a valid email address."
+                            : "Enter the parent’s email address to continue."}
                         </p>
                       )}
                       {config.turnstileRequired && config.turnstileSiteKey && (
