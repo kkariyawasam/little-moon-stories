@@ -35,6 +35,7 @@ import BlogSection from "./components/BlogSection";
 
 declare global {
   interface Window {
+    gtag?: (...args: unknown[]) => void;
     turnstile?: {
       render: (
         container: HTMLElement,
@@ -221,12 +222,33 @@ const SAMPLE_AUDIO_STORIES = [
       "A melody-filled adventure for brothers Henry and Paul and their sister Eliana, who love singing and drawing",
   },
 ] as const;
-const REQUIRED_STORY_CHOICES = 5;
+const MIN_STORY_CHOICES = 1;
+const MAX_STORY_CHOICES = 5;
 const AGE_RANGE_OPTIONS = ["3-4", "5-6", "7-8"] as const;
+const trackGaEvent = (name: string, parameters: Record<string, unknown> = {}) => {
+  window.gtag?.("event", name, parameters);
+};
 
 export default function App() {
   // Navigation active tab for highlighting
   const [activeTab, setActiveTab] = useState("hero");
+  const [isFacebookVisitor] = useState(() => {
+    const parameters = new URLSearchParams(window.location.search);
+    const source = (parameters.get("utm_source") || "").toLowerCase();
+    return (
+      source === "facebook" ||
+      source === "fb" ||
+      document.referrer.toLowerCase().includes("facebook.com") ||
+      document.referrer.toLowerCase().includes("fb.com")
+    );
+  });
+  const facebookLandingTracked = useRef(false);
+
+  useEffect(() => {
+    if (!isFacebookVisitor || facebookLandingTracked.current) return;
+    facebookLandingTracked.current = true;
+    trackGaEvent("fb_landing_view", { campaign_source: "facebook" });
+  }, [isFacebookVisitor]);
 
   // Checkout URL success states
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -435,6 +457,10 @@ export default function App() {
   };
 
   const openStoryBuilder = (plan: "free_trial" | "monthly") => {
+    trackGaEvent("story_form_start", {
+      plan_type: plan,
+      traffic_segment: isFacebookVisitor ? "facebook" : "other",
+    });
     setRegistrationPlan(plan);
     setSignupMessage(null);
     setBuilderStep(0);
@@ -532,7 +558,7 @@ export default function App() {
     if (!next) return;
 
     if (
-      selected.length < REQUIRED_STORY_CHOICES &&
+      selected.length < MAX_STORY_CHOICES &&
       !selected.some(
         (item) => item.toLocaleLowerCase() === next.toLocaleLowerCase(),
       )
@@ -552,12 +578,12 @@ export default function App() {
   );
   const currentStage = builderStages[currentStageIndex];
   const currentSubstep = currentStage.steps.indexOf(builderStep) + 1;
-  const hasAnimal = selectedAnimals.length === REQUIRED_STORY_CHOICES;
-  const hasTheme = selectedThemes.length === REQUIRED_STORY_CHOICES;
-  const hasHobby = selectedHobbies.length === REQUIRED_STORY_CHOICES;
-  const hasMaxAnimals = selectedAnimals.length >= REQUIRED_STORY_CHOICES;
-  const hasMaxThemes = selectedThemes.length >= REQUIRED_STORY_CHOICES;
-  const hasMaxHobbies = selectedHobbies.length >= REQUIRED_STORY_CHOICES;
+  const hasAnimal = selectedAnimals.length >= MIN_STORY_CHOICES;
+  const hasTheme = selectedThemes.length >= MIN_STORY_CHOICES;
+  const hasHobby = selectedHobbies.length >= MIN_STORY_CHOICES;
+  const hasMaxAnimals = selectedAnimals.length >= MAX_STORY_CHOICES;
+  const hasMaxThemes = selectedThemes.length >= MAX_STORY_CHOICES;
+  const hasMaxHobbies = selectedHobbies.length >= MAX_STORY_CHOICES;
   const childrenComplete =
     childrenList.length > 0 &&
     childrenList.every((child) => child.nickname.trim()) &&
@@ -583,6 +609,17 @@ export default function App() {
   const goToBuilderStep = (step: number) => {
     const targetStep = Math.min(Math.max(step, 0), builderSteps.length - 1);
     if (canOpenBuilderStep(targetStep)) {
+      trackGaEvent("story_builder_step", {
+        step_number: targetStep + 1,
+        plan_type: registrationPlan,
+        traffic_segment: isFacebookVisitor ? "facebook" : "other",
+      });
+      if (targetStep === 3) {
+        trackGaEvent("personalization_preview_view", {
+          plan_type: registrationPlan,
+          traffic_segment: isFacebookVisitor ? "facebook" : "other",
+        });
+      }
       setBuilderStep(targetStep);
     }
   };
@@ -656,6 +693,10 @@ export default function App() {
 
     setSubmitting(true);
     setSignupMessage(null);
+    trackGaEvent("story_form_submit", {
+      plan_type: requestedPlan,
+      traffic_segment: isFacebookVisitor ? "facebook" : "other",
+    });
 
     // Prepare variables based on Tag selections
     const finalTheme =
@@ -691,9 +732,20 @@ export default function App() {
 
       if (response.ok) {
         if (data.checkoutSessionUrl) {
+          trackGaEvent("paypal_checkout_start", {
+            plan_type: requestedPlan,
+            value: 9,
+            currency: "USD",
+            traffic_segment: isFacebookVisitor ? "facebook" : "other",
+          });
           // Redirect to PayPal checkout
           window.location.href = data.checkoutSessionUrl;
         } else if (data.registered) {
+          if (requestedPlan === "free_trial") {
+            trackGaEvent("free_story_submit", {
+              traffic_segment: isFacebookVisitor ? "facebook" : "other",
+            });
+          }
           setSignupMessage({
             type: "success",
             text:
@@ -923,7 +975,7 @@ export default function App() {
           >
             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
               <span className="flex items-center gap-2 text-sm">
-                <CheckCircle className="w-5 h-5 shrink-0 text-slate-950 animate-bounce" />
+                <CheckCircle className="w-5 h-5 shrink-0 text-slate-950" />
                 <span>
                   Payment successful! Your Cozy Kid Tales 30-day plan is
                   active. Your $9 payment includes 30 nightly stories. Your
@@ -1049,7 +1101,7 @@ export default function App() {
 
             <div className="shrink-0">
               <button
-                onClick={() => scrollTo("pricing")}
+                onClick={() => openStoryBuilder("free_trial")}
                 className="min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 <Moon className="w-4 h-4" />
@@ -1067,69 +1119,107 @@ export default function App() {
           >
             <div className="flex flex-col items-center justify-center text-center space-y-8">
               <div className="space-y-6 max-w-3xl">
-                <div className="inline-flex max-w-full items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/70 border border-emerald-900/40 text-[10px] sm:text-xs text-emerald-300 font-medium font-mono leading-relaxed">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" />
-                  <span>100% Screen-Free Cozy Night Personalized Stories</span>
+                <div className="inline-flex max-w-full items-center justify-center gap-2 rounded-full border border-emerald-900/40 bg-emerald-950/70 px-3 py-1.5 font-mono text-[10px] font-medium leading-relaxed text-emerald-300 sm:text-xs">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>
+                    {isFacebookVisitor
+                      ? "Your first personalized story is free"
+                      : "100% Screen-Free Cozy Night Personalized Stories"}
+                  </span>
                 </div>
 
                 <h1 className="text-3xl sm:text-5xl md:text-6xl font-kids tracking-wide text-white leading-[1.15]">
-                  Cozy customized <br className="hidden sm:inline" />
+                  {isFacebookVisitor
+                    ? "Turn their favorite things into "
+                    : "Personalized bedtime stories "}
+                  <br className="hidden sm:inline" />
                   <span className="bg-gradient-to-r from-emerald-400 via-amber-300 to-rose-400 bg-clip-text text-transparent">
-                    Bedtime Audio Stories
-                  </span>{" "}
-                  <br />
-                  for your kids
+                    {isFacebookVisitor
+                      ? "a bedtime story made for them"
+                      : "made for your child"}
+                  </span>
                 </h1>
 
                 <p className="text-base md:text-lg text-slate-300 leading-relaxed max-w-2xl mx-auto font-light">
-                  We write daily sleepy tales centered around your child's
-                  actual age, hobbies, and favorite animal friends - mixed with
-                  slow-paced sounds and delivered straight to your email every
-                  evening.
+                  Tell us their nickname, favorite animals, and hobbies. We’ll
+                  create a calming audio story and deliver it to your email.
                 </p>
+
+                <div
+                  className="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-xs font-semibold text-indigo-100 sm:text-sm"
+                  aria-label="How it works: Choose preferences, we create the story, and you receive it by email"
+                >
+                  <span>Choose preferences</span>
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+                  <span>We create the story</span>
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+                  <span>Receive it by email</span>
+                </div>
+
+                <div className="mx-auto max-w-xl rounded-2xl border border-indigo-300/25 bg-slate-950/55 p-4 text-left shadow-[0_14px_40px_rgba(2,6,23,0.3)] backdrop-blur-sm sm:p-5">
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300 text-slate-950">
+                      <Volume2 className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-white">
+                        Noah &amp; Emma’s Bird-Watching Story
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Sample bedtime story · 3:22
+                      </p>
+                    </div>
+                  </div>
+                  <audio
+                    controls
+                    controlsList="nodownload"
+                    onPlay={() =>
+                      trackGaEvent("hear_sample", {
+                        sample_name: "noah_emma_bird_story",
+                        placement: "hero",
+                        traffic_segment: isFacebookVisitor ? "facebook" : "other",
+                      })
+                    }
+                    onContextMenu={(event) => event.preventDefault()}
+                    preload="metadata"
+                    src={SAMPLE_AUDIO_STORIES[0].src}
+                    className="w-full accent-amber-300"
+                  >
+                    Your browser does not support audio playback.
+                  </audio>
+                </div>
 
                 <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-4">
                   <button
-                    onClick={() => scrollTo("pricing")}
+                    onClick={() => openStoryBuilder("free_trial")}
                     className="w-full sm:w-auto min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                   >
                     <Moon className="w-4 h-4" />
-                    Try it Free
+                    {isFacebookVisitor
+                      ? "Create My Child’s Free Story"
+                      : "Try it Free"}
                   </button>
                   <button
-                    onClick={playSampleAudio}
+                    onClick={() => scrollTo("sample-audio")}
                     className="w-full sm:w-auto min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-100 border border-indigo-300/30 bg-slate-950/40 hover:bg-slate-900/70 hover:border-indigo-300/60 font-bold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                   >
                     <Volume2 className="w-4 h-4" />
-                    Hear Sample Bedtime Story
+                    More Sample Stories
                   </button>
                 </div>
 
-                {/* Premium trust metrics */}
                 <div className="pt-8 sm:pt-10 grid grid-cols-3 gap-2 sm:gap-6 border-t border-[#1a1f46]/40 text-center max-w-md mx-auto">
                   <div>
-                    <span className="block text-2xl font-bold text-amber-400 font-mono">
-                      100%
-                    </span>
-                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">
-                      Screen-Free
-                    </span>
+                    <span className="block text-2xl font-bold text-amber-400 font-mono">100%</span>
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">Screen-Free</span>
                   </div>
                   <div>
-                    <span className="block text-2xl font-bold text-indigo-300 font-mono">
-                      3-8
-                    </span>
-                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">
-                      Ages Supported
-                    </span>
+                    <span className="block text-2xl font-bold text-indigo-300 font-mono">3-8</span>
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">Ages Supported</span>
                   </div>
                   <div>
-                    <span className="block text-2xl font-bold text-slate-100 font-mono">
-                      $9
-                    </span>
-                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">
-                      30-Day Plan
-                    </span>
+                    <span className="block text-2xl font-bold text-slate-100 font-mono">$9</span>
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium font-mono">30-Day Plan</span>
                   </div>
                 </div>
               </div>
@@ -1278,6 +1368,13 @@ export default function App() {
                       ref={index === 0 ? sampleAudioRef : undefined}
                       controls
                       controlsList="nodownload"
+                      onPlay={() =>
+                        trackGaEvent("hear_sample", {
+                          sample_name: story.title,
+                          placement: "sample_section",
+                          traffic_segment: isFacebookVisitor ? "facebook" : "other",
+                        })
+                      }
                       onContextMenu={(event) => event.preventDefault()}
                       preload="metadata"
                       src={story.src}
@@ -1389,7 +1486,7 @@ export default function App() {
             </div>
             <div className="mt-8 flex justify-center">
               <button
-                onClick={() => scrollTo("pricing")}
+                onClick={() => openStoryBuilder("free_trial")}
                 className="min-h-12 px-6 sm:px-8 py-3 sm:py-4 rounded-xl text-slate-950 bg-amber-300 hover:bg-amber-200 font-bold tracking-wide shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_30px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 <Moon className="w-4 h-4" />
@@ -1438,11 +1535,11 @@ export default function App() {
               <p className="text-slate-300 text-sm sm:text-base font-light leading-relaxed">
                 {registrationPlan === "monthly"
                   ? "Choose the details for 30 personalized bedtime stories."
-                  : "Choose your story details and preferred delivery time. Then select one free story or the 30-day story plan."}
+                  : "Choose your child’s story details and preferred delivery time. No account or payment details required."}
               </p>
             </div>
 
-            <div className="max-w-xl mx-auto reveal-stagger">
+            <div className="max-w-xl mx-auto">
               <div className="rounded-2xl border border-indigo-500/30 bg-[#090d2a]/80 p-2.5 sm:p-3 shadow-[0_18px_45px_rgba(15,23,42,0.35)]">
                 <div className="mb-2.5 rounded-2xl border border-[#26306a] bg-[#050814]/70 px-3 py-2">
                   <div className="flex items-center justify-between gap-3">
@@ -1507,6 +1604,23 @@ export default function App() {
                   )}
                 </div>
 
+                {builderStep >= 3 && childrenComplete && hasAnimal && hasHobby && (
+                  <div className="mb-3 rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-300/10 via-indigo-400/10 to-emerald-300/10 p-3.5 text-left">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                      Your personalization preview
+                    </span>
+                    <h3 className="mt-1 font-kids text-xl tracking-wide text-white">
+                      {childrenList[0].nickname.trim()} and the Moonlight {selectedAnimals[0]}
+                    </h3>
+                    <p className="mt-1.5 text-xs leading-5 text-indigo-100/80">
+                      Tonight, {childrenList[0].nickname.trim()} meets a gentle {selectedAnimals[0].toLowerCase()} and discovers how {selectedHobbies[0].toLowerCase()} can open the door to a calming adventure.
+                    </p>
+                    <p className="mt-2 text-[10px] text-slate-400">
+                      This is an example preview. Your delivered story will be newly created from all your selections.
+                    </p>
+                  </div>
+                )}
+
                 <div className="hidden">
                   {builderSteps.map((step, index) => {
                     const isActive = builderStep === index;
@@ -1549,8 +1663,8 @@ export default function App() {
                           Pick a gentle story friend
                         </h3>
                         <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                          Choose exactly 5 animal companions your child would
-                          love to meet at bedtime.
+                          Choose at least 1 animal companion. You can add up to
+                          5 if you would like more variety.
                         </p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
@@ -1566,7 +1680,7 @@ export default function App() {
                                 setSelectedAnimals((prev) =>
                                   selected
                                     ? prev.filter((item) => item !== animal)
-                                    : prev.length < REQUIRED_STORY_CHOICES
+                                    : prev.length < MAX_STORY_CHOICES
                                       ? [...prev, animal]
                                       : prev,
                                 );
@@ -1623,8 +1737,7 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        {selectedAnimals.length}/{REQUIRED_STORY_CHOICES}{" "}
-                        selected
+                        {selectedAnimals.length}/{MAX_STORY_CHOICES} selected · 1 required
                       </p>
                       {selectedAnimals.filter(
                         (animal) => !builderAnimalOptions.includes(animal),
@@ -1661,7 +1774,7 @@ export default function App() {
                       >
                         {hasAnimal
                           ? "Add Their Favorite Joy"
-                          : `Choose ${Math.max(0, REQUIRED_STORY_CHOICES - selectedAnimals.length)} More`}
+                          : `Choose ${Math.max(0, MIN_STORY_CHOICES - selectedAnimals.length)} More`}
                       </button>
                     </div>
                   )}
@@ -1690,7 +1803,7 @@ export default function App() {
                                 setSelectedThemes((prev) =>
                                   selected
                                     ? prev.filter((item) => item !== theme)
-                                    : prev.length < REQUIRED_STORY_CHOICES
+                                    : prev.length < MAX_STORY_CHOICES
                                       ? [...prev, theme]
                                       : prev,
                                 );
@@ -1747,7 +1860,7 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        {selectedThemes.length}/{REQUIRED_STORY_CHOICES}{" "}
+                        {selectedThemes.length}/{MAX_STORY_CHOICES}{" "}
                         selected
                       </p>
                       {selectedThemes.filter(
@@ -1784,7 +1897,7 @@ export default function App() {
                       >
                         {hasTheme
                           ? "Add Their Favorite Joy"
-                          : `Choose ${Math.max(0, REQUIRED_STORY_CHOICES - selectedThemes.length)} More`}
+                          : `Choose ${Math.max(0, MIN_STORY_CHOICES - selectedThemes.length)} More`}
                       </button>
                     </div>
                   )}
@@ -1796,8 +1909,8 @@ export default function App() {
                           What little joy should appear in the story?
                         </h3>
                         <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                          Choose exactly 5 things your child enjoys, so the
-                          stories have more room to vary.
+                          Choose at least 1 favorite activity. You can add up to
+                          5 if you would like more variety.
                         </p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
@@ -1813,7 +1926,7 @@ export default function App() {
                                 setSelectedHobbies((prev) =>
                                   selected
                                     ? prev.filter((item) => item !== hobby)
-                                    : prev.length < REQUIRED_STORY_CHOICES
+                                    : prev.length < MAX_STORY_CHOICES
                                       ? [...prev, hobby]
                                       : prev,
                                 );
@@ -1872,8 +1985,7 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        {selectedHobbies.length}/{REQUIRED_STORY_CHOICES}{" "}
-                        selected
+                        {selectedHobbies.length}/{MAX_STORY_CHOICES} selected · 1 required
                       </p>
                       {selectedHobbies.filter(
                         (hobby) => !builderHobbyOptions.includes(hobby),
@@ -1909,7 +2021,7 @@ export default function App() {
                       >
                         {hasHobby
                           ? "Tell Us About Your Child"
-                          : `Choose ${Math.max(0, REQUIRED_STORY_CHOICES - selectedHobbies.length)} More`}
+                          : `Choose ${Math.max(0, MIN_STORY_CHOICES - selectedHobbies.length)} More`}
                       </button>
                     </div>
                   )}
@@ -2248,8 +2360,8 @@ export default function App() {
                     <span className="text-xs text-slate-300">one time</span>
                   </div>
                   <p className="md:min-h-[5.25rem] text-sm font-light text-slate-300 leading-relaxed">
-                    Register your child's story preferences and receive one
-                    personalized audio story tomorrow at your selected bedtime.
+                    Get one personalized audio bedtime story free. No account
+                    or payment details required.
                   </p>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-mono">
                     What you'll get
@@ -2521,7 +2633,7 @@ export default function App() {
                   setShowSignupModal(false);
                   setSignupMessage(null);
                 }}
-                className="w-8 h-8 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors animate-pulse"
+                className="w-8 h-8 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2810,7 +2922,7 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      {selectedAnimals.length}/{REQUIRED_STORY_CHOICES} animals
+                      {selectedAnimals.length}/{MAX_STORY_CHOICES} animals
                       selected
                     </p>
                   </div>
@@ -2897,7 +3009,7 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      {selectedHobbies.length}/{REQUIRED_STORY_CHOICES} hobbies
+                      {selectedHobbies.length}/{MAX_STORY_CHOICES} hobbies
                       selected
                     </p>
                   </div>
@@ -2979,7 +3091,7 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      {selectedThemes.length}/{REQUIRED_STORY_CHOICES} themes
+                      {selectedThemes.length}/{MAX_STORY_CHOICES} themes
                       selected
                     </p>
                   </div>

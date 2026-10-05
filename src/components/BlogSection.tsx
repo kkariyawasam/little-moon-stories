@@ -37,7 +37,7 @@ const BLOG_POSTS: BlogPost[] = [
     imageAlt:
       "A parent reading a magical personalized bedtime story to a child in a cozy bedroom",
     paragraphs: [
-      "For parents of children ages 2 to 8, bedtime can be one of the most precious moments of the day. Adding a personal touch to that routine—through personalized bedtime stories featuring your child as the hero—can transform an ordinary night into a memorable experience. Beyond the fun, this simple practice offers real developmental benefits backed by educators and child psychologists alike.",
+      "For parents of children ages 3 to 8, bedtime can be one of the most precious moments of the day. Adding a personal touch to that routine—through personalized bedtime stories featuring your child as the hero—can transform an ordinary night into a memorable experience. Beyond the fun, this simple practice offers real developmental benefits backed by educators and child psychologists alike.",
     ],
     sectionsTitle: "Why Bedtime Stories Matter",
     sections: [
@@ -81,7 +81,7 @@ const BLOG_POSTS: BlogPost[] = [
       "A child listening to a personalized audio story and imagining an adventure with a puppy",
     paragraphs: [
       "Imagine your child hearing, “Tonight, Lily and her little dog are going on an adventure.” Suddenly, the story feels familiar. Their name, their favorite animal, and something they love are part of the adventure.",
-      "For children ages 2–8, these personal touches can make listening especially inviting. Here are four reasons personalized audio stories can become a much-loved part of bedtime.",
+      "For children ages 3–8, these personal touches can make listening especially inviting. Here are four reasons personalized audio stories can become a much-loved part of bedtime.",
     ],
     sectionsTitle: "Why Children Enjoy Them",
     sections: [
@@ -116,7 +116,7 @@ const BLOG_POSTS: BlogPost[] = [
     imageAlt:
       "A child imagining a friendly dragon, castle, sailing ship, and rocket at bedtime",
     paragraphs: [
-      "When your child listens to a story, words can become pictures in their mind: a cozy treehouse, a playful puppy, or a garden full of butterflies. For children ages 2–8, this imaginative experience offers opportunities to practice skills they use in everyday learning.",
+      "When your child listens to a story, words can become pictures in their mind: a cozy treehouse, a playful puppy, or a garden full of butterflies. For children ages 3–8, this imaginative experience offers opportunities to practice skills they use in everyday learning.",
       "The American Academy of Pediatrics highlights how shared reading supports language, relationships, and social-emotional development. Listening together and talking about stories can bring these learning opportunities into your bedtime routine. Here are four ways bedtime stories can support your child's growing mind:",
     ],
     sectionsTitle: "How Stories Support Growing Minds",
