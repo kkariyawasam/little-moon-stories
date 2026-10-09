@@ -222,7 +222,7 @@ const SAMPLE_AUDIO_STORIES = [
       "A melody-filled adventure for brothers Henry and Paul and their sister Eliana, who love singing and drawing",
   },
 ] as const;
-const MIN_STORY_CHOICES = 1;
+const MIN_STORY_CHOICES = 5;
 const MAX_STORY_CHOICES = 5;
 const AGE_RANGE_OPTIONS = ["3-4", "5-6", "7-8"] as const;
 const trackGaEvent = (name: string, parameters: Record<string, unknown> = {}) => {
@@ -244,6 +244,53 @@ export default function App() {
   });
   const facebookLandingTracked = useRef(false);
   const trackedAudioStarts = useRef(new Set<string>());
+  const heroBadgeRef = useRef<HTMLSpanElement>(null);
+  const heroBadgeText = isFacebookVisitor
+    ? "Your first personalized story is free"
+    : "100% Screen-Free Cozy Night Personalized Stories";
+  const [typedHeroBadge, setTypedHeroBadge] = useState("");
+
+  useEffect(() => {
+    const badge = heroBadgeRef.current;
+    if (!badge) return;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setTypedHeroBadge(heroBadgeText);
+      return;
+    }
+
+    let timer: number | undefined;
+    let hasStarted = false;
+    const typeBadge = () => {
+      if (hasStarted) return;
+      hasStarted = true;
+      let character = 0;
+      const typeNextCharacter = () => {
+        character += 1;
+        setTypedHeroBadge(heroBadgeText.slice(0, character));
+        if (character < heroBadgeText.length) {
+          timer = window.setTimeout(typeNextCharacter, 38);
+        }
+      };
+      typeNextCharacter();
+    };
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          typeBadge();
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.6 },
+    );
+    observer.observe(badge);
+
+    return () => {
+      observer.disconnect();
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [heroBadgeText]);
 
   useEffect(() => {
     if (!isFacebookVisitor || facebookLandingTracked.current) return;
@@ -1191,12 +1238,22 @@ export default function App() {
           >
             <div className="flex flex-col items-center justify-center text-center space-y-8">
               <div className="space-y-6 max-w-3xl">
-                <div className="inline-flex max-w-full items-center justify-center gap-2 rounded-full border border-emerald-900/40 bg-emerald-950/70 px-3 py-1.5 font-mono text-[10px] font-medium leading-relaxed text-emerald-300 sm:text-xs">
+                <div className="inline-flex max-w-full items-center justify-center gap-2 rounded-full border border-emerald-900/40 bg-emerald-950/70 px-3.5 py-2 font-mono text-xs font-medium leading-relaxed text-emerald-300 sm:text-sm">
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>
-                    {isFacebookVisitor
-                      ? "Your first personalized story is free"
-                      : "100% Screen-Free Cozy Night Personalized Stories"}
+                  <span
+                    ref={heroBadgeRef}
+                    className="relative inline-block"
+                    aria-label={heroBadgeText}
+                  >
+                    <span className="invisible" aria-hidden="true">
+                      {heroBadgeText}
+                    </span>
+                    <span className="absolute inset-0" aria-hidden="true">
+                      {typedHeroBadge}
+                      {typedHeroBadge.length < heroBadgeText.length && (
+                        <span className="ml-0.5 text-amber-300">|</span>
+                      )}
+                    </span>
                   </span>
                 </div>
 
@@ -1326,8 +1383,7 @@ export default function App() {
                   Choose Elements
                 </h3>
                 <p className="text-xs text-slate-200 leading-relaxed font-light">
-                  Add your children's names and shared age group, then choose
-                  their favorite hobbies and adorable animal sidekicks.
+                  Add their nicknames, age range, favorite hobbies, and animals.
                 </p>
               </div>
 
@@ -1343,9 +1399,8 @@ export default function App() {
                   Inbox Delivery
                 </h3>
                 <p className="text-xs text-slate-200 leading-relaxed font-light">
-                  Every afternoon or evening, at your exact requested delivery
-                  hour, a dedicated and beautifully written sleeping tale is
-                  sent directly to the parent's email.
+                  A personalized bedtime story arrives at the parent’s email at
+                  the selected time.
                 </p>
               </div>
 
@@ -1361,9 +1416,7 @@ export default function App() {
                   Offline Slumber
                 </h3>
                 <p className="text-xs text-slate-200 leading-relaxed font-light">
-                  Dim down the bedroom lights, tap the audio stream link from
-                  any smart speaker or phone (with screens fully covered/dark),
-                  and let your little one drift away to the calm voice.
+                  Press play on a phone and enjoy a calm, screen-free bedtime.
                 </p>
               </div>
             </div>
@@ -1486,8 +1539,7 @@ export default function App() {
                     Screen-Free Listening
                   </h4>
                   <p className="text-sm text-slate-300 leading-6 font-light">
-                    A story children can hear, imagine, and enjoy without
-                    needing to watch a screen.
+                    Audio stories children can enjoy without watching a screen.
                   </p>
                 </div>
 
@@ -1499,8 +1551,7 @@ export default function App() {
                     Parent-Friendly Delivery
                   </h4>
                   <p className="text-sm text-slate-300 leading-6 font-light">
-                    A simple story link delivered to the parent's email. No
-                    child-facing app, scrolling feed, or in-story ads.
+                    A simple, ad-free story link sent to the parent’s email.
                   </p>
                 </div>
 
@@ -1512,8 +1563,7 @@ export default function App() {
                     Gentle Bedtime Moments
                   </h4>
                   <p className="text-sm text-slate-300 leading-6 font-light">
-                    Personalized stories filled with kindness, patience,
-                    curiosity, friendship, and caring moments.
+                    Personalized stories with kind, caring moments.
                   </p>
                 </div>
 
@@ -1525,8 +1575,7 @@ export default function App() {
                     A Calm Nightly Ritual
                   </h4>
                   <p className="text-sm text-slate-300 leading-6 font-light">
-                    A familiar story routine that can become part of a peaceful
-                    wind-down before bed.
+                    A peaceful story routine before bed.
                   </p>
                 </div>
 
@@ -1538,8 +1587,7 @@ export default function App() {
                     Made for Imagination
                   </h4>
                   <p className="text-sm text-slate-300 leading-6 font-light">
-                    Children listen, picture the story in their minds, and enjoy
-                    a cozy moment with family.
+                    Children listen, imagine, and enjoy time with family.
                   </p>
                 </div>
               </div>
@@ -1595,7 +1643,13 @@ export default function App() {
               <p className="text-slate-300 text-sm sm:text-base font-light leading-relaxed">
                 {registrationPlan === "monthly"
                   ? "Choose the details for 30 personalized bedtime stories."
-                  : "Choose your child’s story details and preferred delivery time. No account or payment details required."}
+                  : (
+                    <>
+                      Choose your child’s story details and preferred delivery time.
+                      <br />
+                      No account or payment details required.
+                    </>
+                  )}
               </p>
             </div>
 
@@ -1706,8 +1760,8 @@ export default function App() {
                           Pick a gentle story friend
                         </h3>
                         <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                          Choose at least 1 animal companion. You can add up to
-                          5 if you would like more variety.
+                          Choose 5 animal companions your child would love to
+                          meet at bedtime.
                         </p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
@@ -1952,8 +2006,8 @@ export default function App() {
                           What little joy should appear in the story?
                         </h3>
                         <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                          Choose at least 1 favorite activity. You can add up to
-                          5 if you would like more variety.
+                          Choose 5 favorite activities so the stories have more
+                          room to vary.
                         </p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
