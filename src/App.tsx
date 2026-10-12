@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import { Analytics } from "@vercel/analytics/react";
 import BlogSection from "./components/BlogSection";
+import MarketingConsent from "./components/MarketingConsent";
+import { trackMetaEvent } from "./metaPixel";
 
 declare global {
   interface Window {
@@ -515,6 +517,17 @@ export default function App() {
               };
               trackGaEvent("purchase", purchase);
               trackGaEvent("payment_verified", purchase);
+              trackMetaEvent(
+                "Purchase",
+                {
+                  value: purchase.value,
+                  currency: purchase.currency,
+                  content_ids: ["30_day_story_plan"],
+                  content_name: "30-Day Personalized Story Plan",
+                  content_type: "product",
+                },
+                data.transactionId,
+              );
               try {
                 window.sessionStorage.setItem(storageKey, "1");
               } catch {
@@ -845,6 +858,13 @@ export default function App() {
               },
             ],
           });
+          trackMetaEvent("InitiateCheckout", {
+            currency: "USD",
+            value: 9,
+            content_ids: ["30_day_story_plan"],
+            content_name: "30-Day Personalized Story Plan",
+            content_type: "product",
+          });
           trackGaEvent("paypal_checkout_start", {
             plan_type: requestedPlan,
             value: 9,
@@ -860,6 +880,12 @@ export default function App() {
               value: 0,
               lead_type: "free_story_request",
               traffic_segment: isFacebookVisitor ? "facebook" : "other",
+            });
+            trackMetaEvent("Lead", {
+              content_name: "Free Personalized Story",
+              content_category: "free_story_request",
+              value: 0,
+              currency: "USD",
             });
             trackGaEvent("free_story_submit", {
               traffic_segment: isFacebookVisitor ? "facebook" : "other",
@@ -3217,6 +3243,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <MarketingConsent />
       <Analytics />
     </div>
   );
